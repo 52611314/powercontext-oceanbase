@@ -1,0 +1,150 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Family-neutral Candidate and Review Inbox domain values."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Generic, Literal, TypeVar
+
+from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
+
+from powercontext.artifacts import ArtifactRef
+from powercontext.artifacts.models import _reject_legacy_memory_citations
+from powercontext.builtin.evidence.models import ResolvedEvidence
+from powercontext.limits import MAX_ARTIFACT_ID_LENGTH
+from powercontext.sources import SourceRef
+
+MAX_CANDIDATE_EVIDENCE = 32
+MAX_CANDIDATE_PAGE_SIZE = 100
+DEFAULT_CANDIDATE_PAGE_SIZE = 50
+MAX_CANDIDATE_REASON_LENGTH = 2_000
+
+ProposalT = TypeVar("ProposalT", bound=BaseModel)
+
+
+class CandidateStatus(StrEnum):
+    """The complete first-version Candidate lifecycle."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class CandidateAudit(BaseModel):
+    """Server-owned provenance pinned to one immutable Dream proposal version."""
+
+    origin: Literal["dream"] = "dream"
+    operation: str
+    dream_run_id: str
+    spec_version: str
+    proposal_digest: str
+    evidence_manifest_ref: str
+    validation_policy_digest: str
+    proposal_fingerprint: str | None = None
+
+
+class Candidate(BaseModel, Generic[ProposalT]):
+    """One current Candidate head with its immutable proposal version."""
+
+    _reject_legacy_citations = model_validator(mode="before")(_reject_legacy_memory_citations)
+
+    candidate_kind: Literal["artifact"] = "artifact"
+    candidate_id: str = Field(min_length=1, max_length=MAX_ARTIFACT_ID_LENGTH)
+    version: StrictInt = Field(ge=1)
+    family: str
+    status: CandidateStatus
+    proposal: ProposalT
+    sources: tuple[SourceRef, ...] = Field(default=(), max_length=MAX_CANDIDATE_EVIDENCE)
+    artifacts: tuple[ArtifactRef, ...] = Field(default=(), max_length=MAX_CANDIDATE_EVIDENCE)
+    target: ArtifactRef | None = None
+    reason: str | None = Field(default=None, min_length=1, max_length=MAX_CANDIDATE_REASON_LENGTH)
+    result_artifact: ArtifactRef | None = None
+    decision_reason: str | None = Field(default=None, min_length=1, max_length=MAX_CANDIDATE_REASON_LENGTH)
+    audit: CandidateAudit | None = None
+
+    @field_validator("candidate_id", "family", "reason", "decision_reason")
+    @classmethod
+    def reject_blank_text(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or value != value.strip()):
+            raise ValueError("Candidate text values must be non-empty and trimmed")  # noqa: TRY003
+        return value
+
+    @model_validator(mode="after")
+    def validate_evidence(self):
+        if not self.sources and not self.artifacts:
+            raise ValueError("Candidate evidence must include a Source or Artifact reference")  # noqa: TRY003
+        if len(self.sources) + len(self.artifacts) > MAX_CANDIDATE_EVIDENCE:
+            raise ValueError(f"Candidate evidence must not exceed {MAX_CANDIDATE_EVIDENCE} references")  # noqa: TRY003
+        if self.target is not None and self.target.family != self.family:
+            raise ValueError("Candidate target must belong to the proposed family")  # noqa: TRY003
+        return self
+
+    @model_validator(mode="after")
+    def validate_lifecycle(self):
+        if self.status is CandidateStatus.APPROVED:
+            if self.result_artifact is None:
+                raise ValueError("approved Candidate must identify its result Artifact")  # noqa: TRY003
+        elif self.result_artifact is not None:
+            raise ValueError("only an approved Candidate may identify a result Artifact")  # noqa: TRY003
+        if self.status is CandidateStatus.REJECTED:
+            if self.decision_reason is None:
+                raise ValueError("rejected Candidate must include a decision reason")  # noqa: TRY003
+        elif self.decision_reason is not None:
+            raise ValueError("only a rejected Candidate may include a decision reason")  # noqa: TRY003
+        return self
+
+
+class CandidatePage(BaseModel, Generic[ProposalT]):
+    """A stable, cursor-based Review Inbox page."""
+
+    candidates: tuple[Candidate[ProposalT], ...]
+    next_cursor: str | None = None
+
+
+class CandidateCatalogItem(BaseModel):
+    """Inbox identity and version metadata, without a proposal or evidence body."""
+
+    candidate_id: str
+    candidate_kind: Literal["artifact", "tag"]
+    family: str
+    version: int
+    status: CandidateStatus
+    reason: str | None = None
+
+
+class CandidateCatalogPage(BaseModel):
+    candidates: tuple[CandidateCatalogItem, ...]
+    next_cursor: str | None = None
+
+
+class CandidateEvidenceView(BaseModel):
+    """Current Candidate evidence expanded under the reader's current authority."""
+
+    candidate_id: str
+    version: int
+    resolved: ResolvedEvidence | None = None
+    unavailable: str | None = None
+
+
+__all__ = [
+    "DEFAULT_CANDIDATE_PAGE_SIZE",
+    "MAX_CANDIDATE_EVIDENCE",
+    "MAX_CANDIDATE_PAGE_SIZE",
+    "MAX_CANDIDATE_REASON_LENGTH",
+    "Candidate",
+    "CandidatePage",
+    "CandidateStatus",
+]

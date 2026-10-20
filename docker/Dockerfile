@@ -1,51 +1,69 @@
-# how to use
-# use docker build: docker build -t miniob .
-# use docker compose: docker compose up -d --build
-# make sure docker has been installed
-FROM ubuntu:24.04
+# syntax=docker/dockerfile:1.7
 
-ENV LANG en_US.utf8
+FROM docker.io/astral/uv:0.10.12 AS uv
 
-RUN apt-get update && apt-get install -y locales apt-utils && rm -rf /var/lib/apt/lists/* \
-    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
 
-# # Change sources to Aliyun
-# RUN cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.bak \
-#     && echo 'Types: deb' > /etc/apt/sources.list.d/ubuntu.sources \
-#     && echo 'URIs: http://mirrors.aliyun.com/ubuntu/' >> /etc/apt/sources.list.d/ubuntu.sources \
-#     && echo 'Suites: noble noble-updates noble-security' >> /etc/apt/sources.list.d/ubuntu.sources \
-#     && echo 'Components: main restricted universe multiverse' >> /etc/apt/sources.list.d/ubuntu.sources \
-#     && echo 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' >> /etc/apt/sources.list.d/ubuntu.sources \
-#     && apt-get update
+FROM python:3.11-slim-bookworm AS builder
 
-RUN apt-get update \
-    && apt-get install -y build-essential gdb cmake git wget flex texinfo diffutils bison \
-    && apt-get install -y clang-format vim sudo
+COPY --from=uv /uv /uvx /bin/
 
-RUN apt-get install -y openssh-server
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_CONCURRENT_DOWNLOADS=4 \
+    UV_HTTP_RETRIES=5 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
 
-# Try cloning from GitHub, if it fails, use cnpmjs.org mirror
-RUN git clone https://github.com/oceanbase/miniob /tmp/miniob || \
-    git clone https://githubfast.com/oceanbase/miniob /tmp/miniob \
-    && cd /tmp/miniob \
-    && THIRD_PARTY_INSTALL_PREFIX=/usr/local bash build.sh init \
-    && mkdir -p /root/docker/bin \
-    && touch /etc/.firstrun \
-    && cp docker/bin/* /root/docker/bin/ \
-    && rm -rf /tmp/miniob
+WORKDIR /app
 
-RUN mkdir /var/run/sshd
+COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY src/ ./src/
 
-RUN apt-get install -y zsh \
-    && mkdir ~/.oh-my-zsh \
-    && git clone https://gitee.com/mirrors/ohmyzsh.git ~/.oh-my-zsh \
-    && cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc \
-    && sed -i "s/robbyrussell/bira/" ~/.zshrc \
-    && usermod --shell /bin/zsh root \
-    && echo "export LD_LIBRARY_PATH=/usr/local/lib64:\$LD_LIBRARY_PATH" >> ~/.zshrc
+ARG POWERCONTEXT_VERSION
 
-RUN chmod +x /root/docker/bin/*
+RUN --mount=type=cache,id=powercontext-uv,target=/root/.cache/uv \
+    test -n "${POWERCONTEXT_VERSION}" \
+    && SETUPTOOLS_SCM_PRETEND_VERSION="${POWERCONTEXT_VERSION}" uv sync \
+    --frozen \
+    --no-dev \
+    --no-editable \
+    --extra cli \
+    --extra server \
+    --refresh-package powercontext \
+    && test "$(.venv/bin/python -c 'from importlib.metadata import version; print(version("powercontext"))')" \
+    = "${POWERCONTEXT_VERSION}"
 
-WORKDIR /root
 
-ENTRYPOINT /root/docker/bin/starter.sh
+FROM python:3.11-slim-bookworm AS runtime
+
+RUN groupadd --gid 10001 powercontext \
+    && useradd --uid 10001 --gid powercontext --home-dir /app --no-create-home --shell /usr/sbin/nologin powercontext \
+    && mkdir -p /data \
+    && chown powercontext:powercontext /data
+
+WORKDIR /app
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    POWERCONTEXT_HOME=/data \
+    POWERCONTEXT_SERVER_HTTP_HOST=0.0.0.0 \
+    POWERCONTEXT_SERVER_HTTP_PORT=8000
+
+# The container binds 0.0.0.0 so a published port is reachable, and its network namespace is the
+# controlled boundary the unauthenticated-bind guard is designed for. Declare that opt-in here so the
+# documented `docker run` starts out of the box; production deployments should still enable bearer
+# auth or terminate TLS upstream (see docker/README.md).
+ENV POWERCONTEXT_SERVER_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=true
+
+COPY --from=builder --chown=powercontext:powercontext /app/.venv /app/.venv
+
+USER powercontext
+
+VOLUME ["/data"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+
+ENTRYPOINT ["powercontext"]
+CMD ["server", "run"]

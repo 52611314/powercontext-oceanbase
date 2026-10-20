@@ -1,112 +1,124 @@
-# OceanBase 贡献指南
+# Contributing to `powercontext`
 
-OceanBase 社区热情欢迎每一位对数据库技术热爱的开发者，期待携手开启思维碰撞之旅。无论是文档格式调整或文字修正、问题修复还是增加新功能，都是对 OceanBase 社区参与和贡献方式之一，立刻开启您的 First Contribution 吧！
+Contributions are welcome, and they are greatly appreciated!
+Every little bit helps, and credit will always be given.
 
-## 阅读建议
+You can contribute in many ways:
 
-为了帮助开发者更好的上手并学习 miniob, 建议阅读：
+# Types of Contributions
 
-1. [miniob 框架介绍](docs/docs/design/miniob-architecture.md)
-2. [如何编译 miniob 源码](docs/docs/how_to_build.md)
-3. [开发环境搭建(本地调试, 适用 Linux 和 Mac)](docs/docs/dev-env/how_to_dev_miniob_by_vscode.md)
-4. [开发环境搭建(远程调试, 适用于 Window, Linux 和 Mac)](docs/docs/dev-env/how_to_dev_in_docker_container_by_vscode.md)
-5. [手把手教你在windows上用docker和vscode配置环境](docs/docs/dev-env/how_to_dev_miniob_by_docker_and_vscode.md)
-6. [miniob 文档汇总](docs/docs/index.md)
+## Report Bugs
 
-更多的文档, 可以参考 [docs](https://github.com/oceanbase/miniob/tree/main/docs), 为了帮助大家更好的学习数据库基础知识, OceanBase 社区提供了一系列教程, 建议学习:
+Report bugs at https://github.com/oceanbase/powercontext/issues
 
-1. [《从0到1数据库内核实战教程》  视频教程](https://open.oceanbase.com/activities/4921877?id=4921946)
-2. [《从0到1数据库内核实战教程》  基础讲义](https://github.com/oceanbase/kernel-quickstart)
-3. [《数据库管理系统实现》  华中科技大学实现教材](docs/src/lectures/index.md)
+If you are reporting a bug, please include:
 
-## 如何找到一个合适issue
+- Your operating system name and version.
+- Any details about your local setup that might be helpful in troubleshooting.
+- Detailed steps to reproduce the bug.
 
-* 通过[寻找一个合适的issue](https://github.com/oceanbase/miniob/issues), 找到一个可以入手的issue
-* 通过`bug`/`new feature`找到当前版本的bug和建议添加的功能
-找到合适的issue之后，可以在issue下回复`/assign` 将issue分配给自己，并添加`developing`标签，这个标签表示当前这个issue在编码开发中
+## Fix Bugs
 
-## 代码贡献流程
+Look through the GitHub issues for bugs.
+Anything tagged with "bug" and "help wanted" is open to whoever wants to implement a fix for it.
 
-以 Mac 操作系统为例
+## Implement Features
 
-### 1. Fork 项目仓库
+Look through the GitHub issues for features.
+Anything tagged with "enhancement" and "help wanted" is open to whoever wants to implement it.
 
-1.  访问项目的 [GitHub 地址](https://github.com/oceanbase/miniob)。 
-2.  点击 Fork 按钮创建远程分支。
+Dashboard contributors should follow the [implementation and verification baseline](docs/en/development/dashboard.md) ([中文](docs/zh/development/dashboard.md)).
 
-### 2. 配置本地环境变量
+For release preparation, use the [version update and release guide](docs/en/development/releasing.md)
+([中文](docs/zh/development/releasing.md)). It documents the Makefile commands and the versions managed independently.
 
-```
-working_dir=$HOME/workspace # 定义工作目录
-user={GitHub账户名} # 和github上的用户名保持一致
-```
+## Write Documentation
 
-### 3. 克隆代码
+powercontext could always use more documentation, whether as part of the official docs, in docstrings, or even on the web in blog posts, articles, and such.
 
-```
-mkdir -p $working_dir
-cd $working_dir
-git clone git@github.com:$user/miniob.git
+## Submit Feedback
 
-# 添加上游分支
-cd $working_dir/miniob
-git remote add upstream git@github.com:oceanbase/miniob.git
+The best way to send feedback is to file an issue at https://github.com/oceanbase/powercontext/issues.
 
-# 为上游分支设置 no_push
-git remote set-url --push upstream no_push
+If you are proposing a new feature:
 
-# 确认远程分支有效
-git remote -v
-```
+- Explain in detail how it would work.
+- Keep the scope as narrow as possible, to make it easier to implement.
+- Remember that this is a volunteer-driven project, and that contributions
+  are welcome :)
 
-### 4. 创建新分支
+# Get Started!
 
-```
-# 更新本地 master 分支。 
-new_branch_name={issue_xxx} # 设定分支名，建议直接使用issue+id的命名
-cd $working_dir/oceanbase
-git fetch upstream
-git checkout main
-git rebase upstream/main
-git checkout -b $new_branch_name
+Ready to contribute? Here's how to set up `powercontext` for local development.
+Please note this documentation assumes you already have `uv` and `Git` installed and ready to go.
+
+1. Fork the `powercontext` repo on GitHub.
+
+2. Clone your fork locally:
+
+```bash
+cd <directory_in_which_repo_should_be_created>
+git clone git@github.com:YOUR_NAME/powercontext.git
 ```
 
-### 5. 开发
+3. Navigate into the repository:
 
-在新建的分支上完成开发
-
-### 6. 提交代码
-
-```
-# 检查本地文件状态
-git status
-
-# 添加您希望提交的文件
-# 如果您希望提交所有更改，直接使用 `git add .`
-git add <file> ... 
-# 为了让 github 自动将 pull request 关联上 github issue, 
-# 建议 commit message 中带上 " #{issueid}", 其中{issueid} 为issue 的id, 
-git commit -m "commit-message: update the xx"
-
-# 在开发分支执行以下操作
-git fetch upstream
-git rebase upstream/main
-git push -u origin $new_branch_name
+```bash
+cd powercontext
 ```
 
-### 7. 创建 PR
+Then install the development environment and Git hooks:
 
-1.  访问您 Fork 的仓库。 
-2.  单击 {new_branch_name} 分支旁的 Compare & pull request 按钮。
+```bash
+make install
+```
 
-### 8. 签署 CLA 协议
-签署[Contributor License Agreement (CLA)](https://cla-assistant.io/oceanbase/oceanbase) ；在提交 Pull Request 的过程中需要签署后才能进入下一步流程。如果没有签署，在提交流程会有如下报错：
+Recommended Codex skills are optional and are not required to build or test the project. If you have `npx`
+available, install the skills pinned in `skills-lock.json` before starting a new Codex session:
 
-![image](https://user-images.githubusercontent.com/5435903/204097095-6a19d2d1-ee0c-4fb6-be2d-77f7577d75d2.png)
+```bash
+make skills-install
+```
 
-### 9. 代码审查与合并
-有review、合并权限的维护者，会帮助开发者进行代码review；review意见通过后，后续的操作都会由维护者进行，包括运行CI测试（目前包括centos和ubuntu的编译）等，最终代码会有维护者通过后合入.
+4. Create a branch for local development:
 
-### 10. 祝贺成为贡献者
+```bash
+git checkout -b name-of-your-bugfix-or-feature
+```
 
-当 pull request 合并后, 则所有的 contributing 工作全部完成, 恭喜您, 您成为 OceanBase 贡献者.
+Now you can make your changes locally.
+
+5. Run the checks that match the change:
+
+```bash
+make check
+make unit-test
+```
+
+Use `make e2e-test` for cross-component behavior, `make contract-test` for OpenAPI changes, and
+`make docs-test` for documentation changes. `make test` runs the complete pytest suite. These pytest targets
+spread tests across one worker per CPU with pytest-xdist; pass `PYTEST_WORKERS=0` to run them in a single process,
+for example when debugging with `pdb`.
+
+Before raising a pull request you should also run tox when a change may affect supported Python versions.
+This requires you to have the relevant Python versions installed. The same version matrix runs in CI.
+
+6. Commit your changes and push your branch to GitHub:
+
+```bash
+git add .
+git commit -m "Your detailed description of your changes."
+git push origin name-of-your-bugfix-or-feature
+```
+
+7. Submit a pull request through the GitHub website.
+
+# Pull Request Guidelines
+
+Before you submit a pull request, check that it meets these guidelines:
+
+1. Add behavior tests for new externally observable behavior. Add a regression test when a defect is likely to
+   recur. Changes that provide neither do not need tests solely for coverage.
+
+2. If the pull request adds functionality, the docs should be updated.
+   Put your new functionality into a function with a docstring, and add the feature to the list in `README.md`.

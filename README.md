@@ -1,99 +1,342 @@
-# MiniOB 介绍
+# PowerContext
 
-> **声明：本项目仅供学习用途，不承诺代码安全及稳定可靠。请勿将其直接用于生产环境。**
+**Context that stays with the work — across sessions, agents, and people.**
 
-<div align="left">
+[![PyPI version](https://img.shields.io/pypi/v/powercontext)](https://pypi.org/project/powercontext/)
+[![License Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-community-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/74cF8vbNEs)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-147DFF)](https://deepwiki.com/oceanbase/powercontext)
 
-[![Chinese Doc](https://img.shields.io/badge/文档-简体中文-blue)](https://oceanbase.github.io/miniob/)
-[![MiniOB stars](https://img.shields.io/badge/dynamic/json?color=blue&label=stars&query=stargazers_count&url=https%3A%2F%2Fapi.github.com%2Frepos%2Foceanbase%2Fminiob)](https://github.com/oceanbase/miniob)
-[![Coverage Status](https://codecov.io/gh/oceanbase/miniob/branch/main/graph/badge.svg)](https://codecov.io/gh/oceanbase/miniob)
-[![HelloGitHub](https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=62efc8a5bbb64a9fbb1ebb7703446f36&claim_uid=AptH8D2YM3rCGL9&theme=small)](https://hellogithub.com/repository/62efc8a5bbb64a9fbb1ebb7703446f36)
+*[English](README.md) · [中文](README_CN.md) · [日本語](README_JP.md)*
 
-</div>
+[Website](https://powercontext.oceanbase.io/) · [Quickstart](https://powercontext.oceanbase.io/en/docs/get-started/quickstart/) · [Manual startup](docs/en/docs/get-started/manual-start.md) · [Integrations](https://powercontext.oceanbase.io/en/docs/integrations/) · [Benchmarks](https://powercontext.oceanbase.io/en/benchmarks/) · [Interfaces](https://powercontext.oceanbase.io/en/docs/develop/interfaces/)
 
-MiniOB 是 [OceanBase](https://github.com/oceanbase/oceanbase) 团队基于华中科技大学数据库课程原型，联合多所高校重新开发的、专为零基础的同学设计的数据库入门学习项目。MiniOB 的目标是为在校学生、数据库从业者、爱好者或对基础技术感兴趣的人提供一个友好的数据库学习项目，更好地将理论、实践进行结合，提升同学们的工程实战能力。
+## What is PowerContext?
 
-MiniOB 整体代码简洁，容易上手，设计了一系列由浅入深的题目，帮助同学们从零基础入门，迅速了解数据库并深入学习数据库内核。MiniOB 简化了许多模块，例如不考虑并发操作、安全特性和复杂的事务管理等功能，以便更好地学习数据库实现原理。我们期望通过 MiniOB 的训练，同学们能够熟练掌握数据库内核模块的功能和协同关系，并具备一定的工程编码能力，例如内存管理、网络通信和磁盘 I/O 处理等, 这将有助于同学在未来的面试和工作中脱颖而出。
+**PowerContext is an open-source context service for AI agents.** It keeps the durable part of your work — decisions,
+constraints, evidence, progress — outside any single conversation, so the next session, the next agent, or the next
+person can pick up from the current state instead of rereading the transcript.
 
-# [文档](https://oceanbase.github.io/miniob/)
-代码配套设计文档和相关代码注释已经生成文档，并通过 GitHub Pages 发布。您可以直接访问：[MiniOB GitHub Pages](https://oceanbase.github.io/miniob/).
+You can use it as a ready-to-run Server or embed the same contracts in another application:
 
-## 快速上手
+| Layer | What it owns | Use it when |
+| --- | --- | --- |
+| Core protocol | `Source`, `Artifact`, and `Trigger` contracts | Embedding PowerContext or adding a component |
+| Builtin runtime | Memory, Handoff, Experience, and Skill services, scheduling, inference, and supported storage backends | Running the standard local Server |
+| Server and integrations | HTTP/MCP, Python Client, CLI, Dashboard, and Agent plugins | Connecting an Agent or application |
 
-为了帮助开发者更好地上手并学习 MiniOB，建议阅读以下内容：
+Work rarely ends with whoever starts it. You hand a task to an agent, the agent gets part of the way, and later you or
+someone else takes over. The reasoning and current state often stay behind in that conversation. PowerContext moves them
+out of the conversation and into revisioned artifacts you can inspect:
 
-1. [MiniOB 框架介绍](https://oceanbase.github.io/miniob/design/miniob-architecture/)
-2. [如何编译 MiniOB 源码](https://oceanbase.github.io/miniob/how_to_build/)
-3. [如何运行 MiniOB](https://oceanbase.github.io/miniob/how_to_run/)
-4. [使用 GitPod 开发 MiniOB](https://oceanbase.github.io/miniob/dev-env/dev_by_gitpod/)
-5. [doxygen 代码文档](https://oceanbase.github.io/miniob/design/doxy/html/index.html)
+![You and agents hand work off and continue with stored context](docs/assets/readme-workflow.svg)
 
-为了帮助大家更好地学习数据库基础知识，OceanBase社区提供了一系列教程。更多文档请参考 [MiniOB GitHub Pages](https://oceanbase.github.io/miniob/)。建议学习：
+Everything belongs to a **Scope** — one isolated Source journal, Memory lifecycle, review inbox, and Handoff history.
+A Scope ID selects data; it does not prove user identity, grant tool access, or authorize execution.
 
-1. [《从0到1数据库内核实战教程》  视频教程](https://open.oceanbase.com/activities/4921877?id=4921946)
-2. [《从0到1数据库内核实战教程》  基础讲义](https://github.com/oceanbase/kernel-quickstart)
-3. [《数据库管理系统实现》  华中科技大学实现教材](https://oceanbase.github.io/miniob/lectures/index.html)
+```text
+Scope
+├── Source journal    # evidence: prompts, documents, work contracts, task outcomes
+├── Memory            # atomic-memory/ARTIFACT_ID@REVISION — decisions, constraints, next steps
+├── Review Inbox      # pending Experience and Skill candidates awaiting a decision
+├── Handoff history   # handoff/ARTIFACT_ID@REVISION — work continuity across sessions
+└── Topic Memory      # extracted in the background from eligible Sources
+```
 
-## 系统架构
+*The Dashboard screenshots below use synthetic demonstration records.*
 
-MiniOB 整体架构如下图所示:
+### Memory — decisions and constraints that outlive a session
 
-<img src="./docs/docs/design/images/miniob-architecture.svg" width = "60%" alt="InternalNode" align=center />
+Memory is a revisioned Artifact family for reusable decisions, constraints, facts, state, and next steps. An entry is
+`active`, `forgotten`, `merged`, or `retired`. Forgetting one through `POST /v1/atomic-memory/lifecycle` takes it out of
+active recall while its content and history stay available and restorable, without advancing the content revision.
+Explicit Memory writes need no model at all; extraction from captured Sources needs a configured generation pipeline.
 
-其中:
+> "Don't refactor the old auth module — mobile is still using it."
+> Context this expensive shouldn't depend on someone repeating it in every session.
 
-- 网络模块(NET Service)：负责与客户端交互，收发客户端请求与应答；
-- SQL解析(Parser)：将用户输入的SQL语句解析成语法树；
-- 语义解析模块(Resolver)：将生成的语法树，转换成数据库内部数据结构；
-- 查询优化(Optimizer)：根据一定规则和统计数据，调整/重写语法树。(部分实现)；
-- 计划执行(Executor)：根据语法树描述，执行并生成结果；
-- 存储引擎(Storage Engine)：负责数据的存储和检索；
-- 事务管理(MVCC)：管理事务的提交、回滚、隔离级别等。当前事务管理仅实现了MVCC模式，因此直接以MVCC展示；
-- 日志管理(Redo Log)：负责记录数据库操作日志；
-- 记录管理(Record Manager)：负责管理某个表数据文件中的记录存放；
-- B+ Tree：表索引存储结构；
-- 会话管理：管理用户连接、调整某个连接的参数；
-- 元数据管理(Meta Data)：记录当前的数据库、表、字段和索引元数据信息；
-- 客户端(Client)：作为测试工具，接收用户请求，向服务端发起请求。
+![Dashboard showing active decisions and constraints for one Scope with their Artifact and Source references](docs/assets/readme-dashboard-memories.png)
 
+### Handoff — the current state, not the whole transcript
 
-# [OceanBase 大赛](https://open.oceanbase.com/competition)
+Handoff records work continuity as a four-step loop:
 
-全国大学生计算机系统能力大赛（以下简称“大赛”）是由系统能力培养研究专家组发起，全国高等学校计算机教育研究会、系统能力培养研究项目示范高校共同主办、OceanBase 承办，面向高校大学生的全国性数据库大赛。
-大赛面向全国爱好数据库的高校学生，以“竞技、交流、成长”为宗旨，搭建基于赛事的技术交流平台，促进高校创新人才培养机制，不仅帮助学生从0开始系统化学习 OceanBase 数据库理论知识，提升学生数据库实践能力，更能帮助学生走向企业积累经验，促进国内数据库人才的发展，碰撞出创新的火花。
+```text
+Work Contract → Prepared Handoff → Acknowledgement → Task Outcome
+```
 
-OceanBase 初赛基于一套适合初学者实践的数据库实训平台 MiniOB，代码量少，易于上手学习，包含了数据库的各个关键模块，是一个系统性的数据库学习平台。基于该平台设置了一系列由浅入深的题目，以帮助同学们更好"零"基础入门。
+`handoff_current_work` captures an inspected boundary and returns a temporary Prepared Handoff. Committing it creates a
+durable Revision only when the user wants a milestone. The receiver resolves the Handoff and records an Acknowledgement;
+a Task Outcome preserves the final status and checks as Source evidence. The
+[Handoff Report](https://powercontext.oceanbase.io/en/docs/workflows/use-handoff-report/) projects the latest Revision in
+each selected Scope — read-only, and it never rewrites Memory.
 
-为了帮助大家能在大赛中取得好成绩，我们提供了一系列的教程和指导，帮助大家更好地学习数据库基础知识，更好地完成大赛题目。
-欢迎大家查看[《从0到1数据库内核实战教程》  视频教程](https://open.oceanbase.com/course/427)，视频中包含了代码框架的介绍和一些入门题目的讲解。
-> 由于MiniOB是一个持续演进的产品，视频教程中有些内容会与最新代码有冲突，建议大家参考讲解中的思路。
+![Dashboard showing a committed Handoff Revision with recorded progress, next action, and linked source evidence](docs/assets/readme-dashboard-handoff.png)
 
-大赛的初赛是在MiniOB上进行的，同学们可以在前几届的题目上进行提前训练，可以让自己比别人提前一步。大家在日常训练时可以在[MiniOB 训练营](https://open.oceanbase.com/train) 上提交代码进行测试。
+### Experience — what worked, reviewed before it is reused
 
-在提交前, 请参考并学习 [训练营使用说明](https://oceanbase.github.io/miniob/dev-env/how_to_submit_for_testing/)。
+An Experience records a situation, an action, an observed outcome, and a reusable lesson. It enters a scope-local Review
+Inbox as a pending Candidate. Review writes use `expected_version`, so a decision cannot silently apply after another
+writer changes the proposal. Approval writes an immutable Revision; rejection records a reason. Both are terminal, and
+only the approved current head takes part in recall — pending, rejected, and historical Revisions are excluded.
 
-如果大家在大赛中或使用训练营时遇到一些问题，请先查看[大赛 FAQ](https://ask.oceanbase.com/t/topic/35601465)。
+### Skill — a reviewed procedure, exported on purpose
 
-# 在线开发平台
+A managed Skill holds a name, a discovery description, instructions, validation checks, and lineage. Approval does not
+install or execute it: an exact approved Revision must be exported explicitly before an Agent host can discover the
+host-local projection.
 
-搭建开发环境是一个比较耗时而且繁琐的事情，特别是对于初学者。为了让大家更快地上手 MiniOB，我们为大家提供了一个[开源学堂在线编程环境](./docs/docs/dev-env/cloudlab_setup.md)，推荐大家使用开源学堂在线编程环境进行实验，在线编程环境已经提供了可以直接用于 MiniOB 编程的环境，便于大家快速开始。对于希望在本地准备开发环境的同学，[这篇文档](./docs/docs/dev-env/introduction.md) 中已经介绍的十分详细，请先认真阅读。如果仍有疑问，欢迎提问，也非常欢迎刚刚入门的同学分享自己准备开发环境的经验。
+[Operational metrics](docs/en/docs/operate/observability.md) expose dependency observations, processing freshness, and attempt latency, including a protected metrics-only endpoint for standalone background deployments.
 
-# Contributing
+## Why PowerContext?
 
-OceanBase 社区热情欢迎每一位对数据库技术热爱的开发者，期待与您携手开启思维碰撞之旅。无论是文档格式调整或文字修正、问题修复还是增加新功能，都是参与和贡献 OceanBase 社区的方式之一。MiniOB 现在开放了一些[新功能的开发](https://github.com/oceanbase/miniob/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)，欢迎有兴趣的同学一起共建，希望我们共同成长。如果你对MiniOB不熟悉也没关系，可以直接联系我们，我们将会有人指导上手。现在就开始您的首次贡献吧！更多详情，请参考 [社区贡献](CONTRIBUTING.md)。
+- **Context lives outside the conversation.** Memory, Handoff, Experience, and Skill are server-side artifacts, not
+  files inside one agent's home directory. Switch from Codex to Claude Code — or hand the work to a teammate — and the
+  work travels with you.
+- **Everything is revisioned and traceable.** Each Artifact is addressed as `FAMILY/ARTIFACT_ID@REVISION`. The Artifact
+  ID stays stable while approved replacements create later Revisions, and reading an exact reference returns that
+  historical snapshot even after the family head advances.
+- **Generation, review, and execution are separate steps.** A model proposes content, review approves a Revision, and
+  export creates a host-local copy. None of those steps grants an Agent permission to execute instructions. See
+  [Interfaces](https://powercontext.oceanbase.io/en/docs/develop/interfaces/) for what each surface exposes today.
+- **Recall is bounded, not dumped.** `PreparedContext` selects configured sections from active Memory and approved
+  Experience, with optional Profile snapshots and Topic Memory, then applies a shared byte budget and returns `ready`
+  content or `empty`. Recalled content is history, not an instruction authority: the receiving Agent still follows
+  current instructions and checks live workspace state.
+- **Review before reuse.** Experience and Skill pass through a review decision that is terminal either way, and
+  approval writes an immutable Revision. With access control enforced, approval requires `scope.review`. An
+  authorized Agent can approve its own Candidate;
+  [separate submission and review](https://powercontext.oceanbase.io/en/docs/workflows/review-candidates/#separate-agent-submission-from-review)
+  with distinct identities and permissions when a person must decide.
+- **One Server, several views of the same contract.** HTTP is the complete remote application contract. The Python Client
+  gives typed access, MCP is a curated Agent-facing projection, and Core protocols let an application assemble its own
+  Source, Artifact, and Trigger implementations.
 
-# Contributors
-感谢所有为 MiniOB 项目做出贡献的同学们！
+### How it compares
 
-<a href="https://github.com/oceanbase/miniob/graphs/contributors"><img src="https://contributors-img.web.app/image?repo=oceanbase/miniob&width=890" /></a>
+The comparison assumes typical single-agent or host-local setups; exact behavior depends on how each system is deployed.
 
-# License
+| | Re-reading chat history | RAG over transcripts | Host-local memory files | PowerContext |
+|---|---|---|---|---|
+| Survives a new session | manual | yes | yes | yes |
+| Survives switching agents | no | no | no | yes |
+| Handing work to a person | manual | manual | manual | Handoff, first-class |
+| Reusable procedure | no | no | prose only | Experience / Skill |
+| Earlier revisions kept | no | depends on the index | only via git | immutable Revisions |
+| Review before reuse | n/a | no | no | Review Inbox |
+| Bounded recall for one turn | no | partial | no | `PreparedContext` byte budget |
+| Inspectable outside the Agent | no | no | yes | yes |
 
-MiniOB 采用 [木兰宽松许可证，第2版](https://license.coscl.org.cn/MulanPSL2), 可以自由拷贝和使用源码, 当做修改或分发时, 请遵守 [木兰宽松许可证，第2版](https://license.coscl.org.cn/MulanPSL2). 
+## Proof it works
 
-# 社区组织
+![Compact comparison of PowerContext results on LoCoMo and SWE-bench Pro](docs/assets/readme-benchmark-summary.svg)
 
-- [OceanBase 社区交流群 33254054](https://h5.dingtalk.com/circle/healthCheckin.html?corpId=dingd88359ef5e4c49ef87cda005313eea7a&1fe0ca69-72d=16c86a07-83c&cbdbhh=qwertyuiop&origin=1)
-- [OceanBase 大赛官方交流群 35326455](https://qr.dingtalk.com/action/joingroup?code=v1,k1,g61jI0RwHQA8UMocuTbys2cyM7vck2c6jNE87vdxz9o=&_dt_no_comment=1&origin=11)
-- [OceanBase 官方论坛](https://ask.oceanbase.com/)
-- MiniOB 开发者微信群(添加 OBCE888 为好友，备注 MiniOB SIG，邀请入群)
+- **Long-conversation memory (LoCoMo; 1,540 scored questions across categories 1–4): 90.78% accuracy**, against 87.79%
+  for PowerMem and 52.9% for full-context replay — **+37.88 points** over full context.
+- **Coding tasks (SWE-bench Pro; a paired project run on all 731 public v2 tasks, not an official submission): 86.73%
+  task resolution with PowerContext on, 82.35% with it off** — **+4.38 points** and 32 more tasks resolved.
+- **Retrieval quality (LoCoMo Plus)**, native PowerContext against PowerContext with Jev candidate filtering after
+  retrieval. Each model is used for both Memory extraction and answering; embeddings use `qwen3.7-text-embedding`
+  (1024 dimensions):
+
+  | Model | PowerContext | PowerContext + Jev | Difference |
+  |---|---|---|---|
+  | GPT-4o-mini | 40.855% | 49.78% | +8.925 points |
+  | Qwen3.7-plus | 60.37% | 68.947% | +8.577 points |
+  | GPT-4o | 65.082% | 69.28% | +4.198 points |
+
+Full methods, results, and limitations: [benchmarks](https://powercontext.oceanbase.io/en/benchmarks/). Two caveats we
+would rather state than bury: the six LoCoMo Plus scores above were supplied by the project owner, and their run
+artifacts are not publicly available for verification — the published instructions reproduce the harness, not those
+scores. Windows support is `experimental`.
+
+## Quick start
+
+If you want to manually configure and start PowerContext, see the [manual startup guide](docs/en/docs/get-started/manual-start.md).
+
+PowerContext keeps durable project context outside any single chat. A first run follows this path:
+
+```text
+Agent input → Source evidence → Memory / Topic Memory → PreparedContext → next session or Agent
+```
+
+PowerContext 1.4.0 includes an interactive setup wizard. You need Python 3.11+, Git, and
+[uv](https://docs.astral.sh/uv/getting-started/installation/); uv can provision Python when needed. To connect an Agent,
+also install its CLI. In the wizard, choose Basic memory for explicit saves and recall without model APIs; Full memory
+requires separate Generation and Embedding API credentials. For a local Server without model APIs, see
+[Install and run](docs/en/docs/get-started/install-and-run.md).
+macOS and Linux are supported; Windows support is `experimental`.
+
+Choose the path that matches your goal:
+
+| Goal | Choose | What you need |
+| --- | --- | --- |
+| Try explicit saves and recall | **Basic memory** | CLI and Server; no model API |
+| Process Sources automatically and use Topic Memory or semantic retrieval | **Full memory** | Separate Generation and Embedding API credentials; schedules and Scope policies still apply |
+| Learn the core workflows in Python | The first seven Jupyter tutorials | A repository checkout and `uv`; no model or API key |
+
+### 1. Install and run the wizard
+
+```bash
+uv tool install --force "powercontext[cli,server]==1.4.0"
+mkdir -p powercontext-config && cd powercontext-config
+powercontext config init --language en --output .env
+powercontext config validate --env-file .env
+powercontext server run --env-file .env      # keep this terminal open
+```
+
+The wizard asks about storage, local or remote usage, memory capabilities, Dashboard/access, and Agent connections. SQLite is the simplest first storage choice; choose embedded seekdb only when you need it and can approve its dependency install.
+
+The wizard writes one `.env` environment file and `.env.next-steps.md`. These files can contain credentials; do not
+commit them. Keep Server running; in another terminal, return to `powercontext-config`, reload the generated environment
+file, and check the connection:
+
+```bash
+set -a
+. ./.env
+set +a
+powercontext ready
+powercontext capabilities
+```
+
+Continue with `.env.next-steps.md` to create and bind the selected Scopes. Use the real `scope_id` returned by the
+creation request; a planned `codex-...` title is not an ID. Changing directories does not create isolation; use the
+same Server and Scope in the Dashboard and Agent. Then install the matching plugins and launch a new Agent session.
+The [complete walkthrough](https://powercontext.oceanbase.io/en/docs/get-started/quickstart/) covers Codex and Claude
+Code, Dashboard login, SSH forwarding, HTTPS prerequisites, and observable acceptance checks. For example, the matching
+Codex installation is:
+
+```bash
+powercontext setup codex --ref powercontext-v1.4.0
+powercontext doctor codex
+```
+
+Before sending the first message in a new Codex session, open `/hooks` and, when prompted, trust the PowerContext
+hooks. Without an enabled `UserPromptSubmit` hook, automatic prompt capture and recall do not run, even if MCP connects.
+See [first-session checks and recovery](docs/en/docs/integrations/codex.md#first-session-hook-trust).
+After the first check below, use the [capability and trigger guide](docs/en/docs/get-started/quickstart.md#5-choose-your-next-workflow)
+to try all seven Artifact families, Source, and Tag. Basic memory needs no separate Server model API; the Agent still uses its own model.
+
+### 2. Verify the first end-to-end result
+
+This checks the path that makes PowerContext useful: Source capture → background processing → cross-session recall. In
+the new Agent session bound to the same Scope, send a concrete decision such as:
+
+```text
+We are designing the Aurora acceptance project. Use uv for Python dependencies and .env for configuration.
+The first deployment runs on one Linux server, with a Mac connecting through an SSH tunnel.
+Restate these constraints without changing any code.
+```
+
+If you enabled Dashboard, open the URL printed by the wizard; an empty Dashboard before capture is expected. Then:
+
+1. Confirm that the prompt appears as a Source.
+2. After the configured inspection interval and model processing, confirm that a related Topic Memory appears.
+3. Send a related update and confirm that the new Source arrives and the topic content or revision history reflects it.
+4. Start a new Agent session with the same Scope and ask for the Aurora decisions with citations.
+
+`doctor codex` checks installation and connectivity only. Source capture does not by itself create Memory or Topic
+Memory, and processing can wait for configured schedules and model work. In Basic memory mode, explicitly ask the Agent
+to save a decision, then search for it in a new session; that does not test automatic extraction.
+
+### 3. Explore Python first — no API key
+
+The tutorials run from a repository checkout and take their dependencies from a `uv` dependency group, so they are not
+part of the `powercontext` package. From the repository root:
+
+```bash
+uv sync --locked --group notebooks
+uv run --locked --group notebooks jupyter lab --notebook-dir=examples/jupyter
+```
+
+Start with [01 · Memory across sessions](examples/jupyter/01_memory_across_sessions.ipynb), then work through the
+[22 Chinese Jupyter tutorials and a complete team workflow](examples/jupyter/README.md) to run Memory, context
+preparation, Handoff, Experience, Skill, and a real Agent step by step. The first seven tutorials need no model or API
+key.
+
+### Common issues
+
+- `doctor codex` verifies Codex installation and connectivity. To verify automatic memory, check that a real prompt
+  becomes a Source, produces a Topic, evolves after a related prompt, and can be recalled in a new session using the
+  same Scope.
+- If Python dependency downloads are slow or fail, configure a package index for
+  [uv](https://docs.astral.sh/uv/configuration/indexes/) and retry.
+- Choose **Full memory capabilities** to test automatic Memory and Topic Memory; this requires separate Generation and
+  Embedding API credentials. An Agent subscription does not provide those Server credentials. Choose **Basic memory** to
+  save and retrieve memories explicitly without additional model APIs.
+- If seekdb needs installing, the wizard asks once and installs the dependency in the background.
+- The optional recall-sufficiency gate records scope-local daily search effort and budget omissions for later policy
+  evaluation. See the [configuration reference](docs/en/docs/operate/configuration.md) for its recording and failure
+  behavior.
+- For a Server on another machine, use HTTPS or follow the
+  [remote connection guide](docs/en/docs/operate/connect-remote-server.md). Setup recognizes remote HTTP URLs from flags
+  or environment variables and asks for explicit consent; automated setup uses `--allow-insecure-http`.
+
+## Connect your Agent
+
+Codex is `official`; other maintained hosts and Python Agent frameworks are `community`; Bub is `evaluation` only.
+These tags describe PowerContext integration maintenance and use. The
+[capability matrix](https://powercontext.oceanbase.io/en/docs/integrations/capabilities/) records which hosts are
+qualified, along with their supported features and availability.
+
+<table>
+<tr>
+<td align="center" width="120"><a href="docs/en/docs/integrations/codex.md"><img src="assets/codex.png" alt="Codex" width="48" height="48" /><br /><sub><b>Codex</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/claude-code.md"><img src="assets/claude-code.png" alt="Claude Code" width="48" height="48" /><br /><sub><b>Claude Code</b></sub></a></td>
+<td align="center" width="120"><a href="integrations/minimax/README.md"><img src="assets/minimax-code.png" alt="MiniMax Code" width="48" height="48" /><br /><sub><b>MiniMax Code</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/dsh.md"><img src="assets/deepseek.png" alt="DeepSeek Harness" width="48" height="48" /><br /><sub><b>DeepSeek Harness</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/zcode.md"><img src="assets/zcode.png" alt="ZCode" width="48" height="48" /><br /><sub><b>ZCode</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/kimi-code.md"><img src="https://github.com/MoonshotAI.png?size=120" alt="Kimi Code" width="48" height="48" /><br /><sub><b>Kimi Code</b></sub></a></td>
+<td align="center" width="120"><a href="integrations/hermes/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/hermes-dark.png"><img src="assets/hermes.png" alt="Hermes Agent" width="48" height="48" /></picture><br /><sub><b>Hermes Agent</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/pi.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/pi-dark.png"><img src="assets/pi.png" alt="Pi Coding Agent" width="48" height="48" /></picture><br /><sub><b>Pi Coding Agent</b></sub></a></td>
+</tr>
+<tr>
+<td align="center" width="120"><a href="docs/en/docs/integrations/openclaw.md"><img src="assets/openclaw.png" alt="OpenClaw" width="48" height="48" /><br /><sub><b>OpenClaw</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/opencode.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/opencode-dark.png"><img src="assets/opencode.png" alt="OpenCode" width="48" height="48" /></picture><br /><sub><b>OpenCode</b></sub></a></td>
+<td align="center" width="120"><a href="integrations/workbuddy/README.md"><img src="https://thesvg.org/icons/workbuddy/default.svg?size=120" alt="WorkBuddy" width="48" height="48" /><br /><sub><b>WorkBuddy</b></sub></a></td>
+<td align="center" width="120"><a href="integrations/bub/README.md"><img src="https://github.com/bubbuild.png?size=120" alt="Bub" width="48" height="48" /><br /><sub><b>Bub</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/pydantic-ai.md"><img src="https://thesvg.org/icons/pydantic/default.svg?size=120" alt="Pydantic AI" width="48" height="48" /><br /><sub><b>Pydantic AI</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/langchain.md"><img src="assets/langchain.png" alt="LangChain" width="48" height="48" /><br /><sub><b>LangChain</b></sub></a></td>
+<td align="center" width="120"><a href="docs/en/docs/integrations/langgraph.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/langgraph-dark.png"><img src="assets/langgraph.png" alt="LangGraph" width="48" height="48" /></picture><br /><sub><b>LangGraph</b></sub></a></td>
+</tr>
+</table>
+
+Applications can use PowerContext through the async Python client, HTTP API, MCP, or the in-process Core SDK. See the
+[interface reference](https://powercontext.oceanbase.io/en/docs/develop/interfaces/) to choose an entry point.
+
+## Build PowerContext
+
+```bash
+make install
+make check
+make test
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete development workflow.
+Coding and memory evaluations, performance benchmarks, and Skill regressions live under
+[`evaluation/`](evaluation/README.md).
+
+## Learn more
+
+- [Get started](https://powercontext.oceanbase.io/en/docs/get-started/quickstart/)
+- [Connect Agents](https://powercontext.oceanbase.io/en/docs/integrations/)
+- [Manage context](https://powercontext.oceanbase.io/en/docs/workflows/)
+- [Deploy and operate](https://powercontext.oceanbase.io/en/docs/operate/)
+- [Develop with APIs](https://powercontext.oceanbase.io/en/docs/develop/)
+
+PowerContext is the successor to [PowerMem](https://www.powermem.ai/).
+
+## Contributors
+
+Thank you to everyone who contributes to PowerContext. ❤️
+
+<a href="https://github.com/oceanbase/powercontext/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=oceanbase/powercontext&amp;max=100&amp;columns=12" alt="PowerContext contributors" />
+</a>
+
+[See all contributors](https://github.com/oceanbase/powercontext/graphs/contributors) ·
+[Start contributing](CONTRIBUTING.md)
+
+## License
+
+PowerContext is licensed under the [Apache License 2.0](LICENSE).

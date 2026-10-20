@@ -1,0 +1,436 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Small, dependency-free PowerContext HTTP client for the Hermes plugin."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from http.client import HTTPResponse
+from typing import TYPE_CHECKING, Any, TypeVar
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+from .helpers import normalize_memory_reference, reject_legacy_citation
+from .powercontext_client_config import normalize_server_url, resolve_allow_insecure_http
+
+if TYPE_CHECKING:
+    from typing_extensions import override
+else:
+    _MethodT = TypeVar("_MethodT")
+
+    def override(method: _MethodT, /) -> _MethodT:
+        return method
+
+
+MAX_RESPONSE_BYTES = 1_048_576
+
+
+# Keep this table aligned with the public PowerContext operation identifiers.
+# The Hermes provider uses ``request_operation`` for less frequently used
+# operations so adding an API operation does not require another bespoke
+# transport wrapper in the plugin.
+_OPERATION_SPECS: dict[str, tuple[str, str]] = {
+    "prepare_context": ("POST", "/v1/context/prepare"),
+    "capture_content_source": ("POST", "/v1/sources/content"),
+    "create_work_contract": ("POST", "/v1/work/contracts/create"),
+    "handoff_current_work": ("POST", "/v1/work/handoffs/prepare-current"),
+    "acknowledge_handoff": ("POST", "/v1/work/handoffs/acknowledge"),
+    "record_task_outcome": ("POST", "/v1/work/outcomes/record"),
+    "activate_handoff": ("POST", "/v1/handoff/activate"),
+    "prepare_handoff": ("POST", "/v1/handoff/prepare"),
+    "finalize_handoff": ("POST", "/v1/handoff/finalize"),
+    "commit_handoff": ("POST", "/v1/handoff/commit"),
+    "continue_handoff": ("POST", "/v1/handoff/continue"),
+    "flush_memory": ("POST", "/v1/memory/flush"),
+    "remember_memory": ("POST", "/v1/memory/remember"),
+    "search_memory": ("POST", "/v1/memory/search"),
+    "list_memory_entries": ("POST", "/v1/memory/entries/list"),
+    "get_memory_entry": ("POST", "/v1/memory/entries/get"),
+    "propose_experience": ("POST", "/v1/experience/propose"),
+    "generate_experience": ("POST", "/v1/experience/generate"),
+    "get_experience": ("POST", "/v1/experience/get"),
+    "propose_skill": ("POST", "/v1/skill/propose"),
+    "generate_skill": ("POST", "/v1/skill/generate"),
+    "get_skill": ("POST", "/v1/skill/get"),
+    "scan_external_skills": ("POST", "/v1/external-skills/scan"),
+    "list_external_skills": ("POST", "/v1/external-skills/list"),
+    "resolve_external_skill": ("POST", "/v1/external-skills/resolve"),
+    "import_external_skill": ("POST", "/v1/external-skills/import"),
+    "list_candidates": ("POST", "/v1/candidates/list"),
+    "get_candidate": ("POST", "/v1/candidates/get"),
+    "approve_candidate": ("POST", "/v1/candidates/approve"),
+    "reject_candidate": ("POST", "/v1/candidates/reject"),
+    "revise_candidate": ("POST", "/v1/candidates/revise"),
+    "get_stats": ("GET", "/v1/stats"),
+}
+
+
+class PowerContextError(RuntimeError):
+    """Base error raised by the integration client."""
+
+
+class PowerContextHTTPError(PowerContextError):
+    """A non-successful HTTP response."""
+
+    def __init__(
+        self,
+        status: int,
+        *,
+        path: str = "",
+        code: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        suffix = f" ({code})" if code else ""
+        super().__init__(f"PowerContext returned HTTP {status}{suffix}")
+        self.status = status
+        self.path = path
+        self.code = code
+        self.server_message = message
+
+
+class PowerContextTransportError(PowerContextError):
+    """A transport or timeout failure before a valid response was received."""
+
+
+class PowerContextInvalidResponseError(PowerContextError):
+    """A successful HTTP response that violates the PowerContext response contract."""
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    @override
+    def redirect_request(self, req: Request, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Request | None:
+        return None
+
+
+Transport = Callable[[Request, float], HTTPResponse]
+
+
+def _decode_error(raw: bytes) -> tuple[str | None, str | None]:
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(decoded, dict):
+        return None, None
+    error = decoded.get("error")
+    if not isinstance(error, dict):
+        return None, None
+    code = error.get("code")
+    message = error.get("message")
+    return (
+        code if isinstance(code, str) else None,
+        message if isinstance(message, str) else None,
+    )
+
+
+class PowerContextClient:
+    """HTTP facade for the PowerContext operations used by Hermes."""
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        authorization: str | None = None,
+        allow_insecure_http: bool | None = None,
+        timeout: float = 5.0,
+        transport: Transport | None = None,
+    ) -> None:
+        self.allow_insecure_http = resolve_allow_insecure_http(
+            base_url,
+            host="hermes",
+            host_environment="POWERCONTEXT_HERMES_ALLOW_INSECURE_HTTP",
+            explicit=allow_insecure_http,
+        )
+        self.base_url = normalize_server_url(base_url, allow_insecure_http=self.allow_insecure_http)
+        self.authorization = authorization.strip() if authorization else None
+        self.timeout = timeout
+        self._opener = build_opener(_NoRedirectHandler())
+        self._transport = transport
+
+    def _request(  # noqa: C901
+        self,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        method: str = "POST",
+        headers: dict[str, str] | None = None,
+        response_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        body = None
+        if method != "GET":
+            body = json.dumps(payload or {}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        request_headers = {
+            "X-PowerContext-Dream-Contract": "2",
+            "Accept": "application/json",
+            "User-Agent": "powercontext-hermes/0.1",
+        }
+        if method != "GET":
+            request_headers["Content-Type"] = "application/json"
+        if self.authorization:
+            request_headers["Authorization"] = self.authorization
+        request_headers.update(headers or {})
+        url = f"{self.base_url}{path}"
+        if method == "GET" and payload:
+            query = urlencode({key: value for key, value in payload.items() if value is not None})
+            if query:
+                url = f"{url}?{query}"
+        request = Request(url, data=body, headers=request_headers, method=method)  # noqa: S310
+
+        try:
+            if self._transport is not None:
+                response = self._transport(request, self.timeout)
+                status = int(getattr(response, "status", 200))
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if response_headers is not None:
+                    etag = getattr(response, "headers", {}).get("ETag")
+                    if etag:
+                        response_headers["ETag"] = str(etag)
+            else:
+                with self._opener.open(request, timeout=self.timeout) as response:
+                    status = int(getattr(response, "status", 200))
+                    raw = response.read(MAX_RESPONSE_BYTES + 1)
+                    if response_headers is not None:
+                        etag = response.headers.get("ETag")
+                        if etag:
+                            response_headers["ETag"] = str(etag)
+        except HTTPError as error:
+            try:
+                error_body = error.read(MAX_RESPONSE_BYTES + 1)
+            except (OSError, TimeoutError):
+                error_body = b""
+            code, message = _decode_error(error_body)
+            raise PowerContextHTTPError(
+                error.code,
+                path=path,
+                code=code,
+                message=message,
+            ) from error
+        except (OSError, TimeoutError, URLError) as error:
+            raise PowerContextTransportError("PowerContext request failed") from error  # noqa: TRY003
+
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise PowerContextInvalidResponseError("PowerContext response exceeded the size limit")  # noqa: TRY003
+        if status < 200 or status >= 300:
+            code, message = _decode_error(raw)
+            raise PowerContextHTTPError(status, path=path, code=code, message=message)
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise PowerContextInvalidResponseError("PowerContext returned invalid JSON") from error  # noqa: TRY003
+        if not isinstance(decoded, dict):
+            raise PowerContextInvalidResponseError("PowerContext returned a non-object response")  # noqa: TRY003
+        return decoded
+
+    def request_operation(self, operation: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Call a public PowerContext operation by its stable identifier."""
+
+        request = payload or {}
+        if operation == "revise_memory_entry":
+            if request.get("reason"):
+                raise ValueError("Atomic content revision does not accept the legacy reason field")  # noqa: TRY003
+            return self.revise_memory_entry(
+                request["scope_id"], request["citation"], kind=request["kind"], text=request["text"]
+            )
+        if operation == "get_memory_entry" and "target" not in request:
+            return self.get_memory_entry(request["scope_id"], request["citation"])
+        if operation == "retire_memory_entry":
+            return self.retire_memory_entry(request["scope_id"], request["citation"])
+        if operation == "remember_memory":
+            return self.remember_memory(
+                request["scope_id"],
+                kind=request["kind"],
+                text=request["text"],
+                reason=request.get("reason"),
+                expected_revision=request.get("expected_revision"),
+            )
+        if operation == "list_memory_changes":
+            raise ValueError("Atomic Memory has per-Artifact revisions; collection change history is unsupported")  # noqa: TRY003
+        try:
+            method, path = _OPERATION_SPECS[operation]
+        except KeyError as error:
+            raise ValueError(f"unsupported PowerContext operation: {operation}") from error  # noqa: TRY003
+        return self._request(path, payload, method=method)
+
+    def get_liveness(self) -> dict[str, Any]:
+        return self._request("/health/live", method="GET")
+
+    def get_readiness(self) -> dict[str, Any]:
+        return self._request("/health/ready", method="GET")
+
+    def get_capabilities(self) -> dict[str, Any]:
+        return self._request("/v1/capabilities", method="GET")
+
+    def resolve_scope_binding(
+        self,
+        *,
+        explicit_scope_id: str | None,
+        binding_keys: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        return self._request(
+            "/v1/scope-bindings/resolve",
+            {"explicit_scope_id": explicit_scope_id, "binding_keys": binding_keys},
+        )
+
+    def set_scope_binding(self, key: dict[str, str], scope_id: str) -> dict[str, Any]:
+        return self._request(
+            "/v1/scope-bindings",
+            {"key": key, "scope_id": scope_id},
+            method="PUT",
+        )
+
+    def clear_scope_binding(self, key: dict[str, str]) -> dict[str, Any]:
+        return self._request("/v1/scope-bindings/clear", {"key": key})
+
+    def prepare_context(
+        self,
+        scope_id: str,
+        query: str,
+        *,
+        max_bytes: int,
+        assembly: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "/v1/context/prepare",
+            {
+                "scope_id": scope_id,
+                "query": query,
+                "max_bytes": max_bytes,
+                **({"assembly": assembly} if assembly is not None else {}),
+            },
+        )
+
+    def search_memory(self, scope_id: str, query: str, *, limit: int, mode: str) -> dict[str, Any]:
+        return self._request(
+            "/v1/memory/search",
+            {"scope_id": scope_id, "query": query, "limit": limit, "mode": mode},
+        )
+
+    def remember_memory(
+        self,
+        scope_id: str,
+        *,
+        kind: str,
+        text: str,
+        reason: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"scope_id": scope_id, "kind": kind, "text": text}
+        if reason:
+            payload["reason"] = reason
+        if expected_revision is not None:
+            raise ValueError("Atomic Memory creation does not accept a collection expected_revision")  # noqa: TRY003
+        return self._request("/v1/memory/remember", payload)
+
+    @staticmethod
+    def _memory_reference(citation: dict[str, Any]) -> dict[str, Any]:
+        reject_legacy_citation(citation)
+        normalized = normalize_memory_reference(citation)
+        if normalized is None:
+            raise ValueError("Invalid exact Memory reference")  # noqa: TRY003
+        return normalized
+
+    @staticmethod
+    def _memory_path(scope_id: str, ref: dict[str, Any]) -> str:
+        return f"/v1/scopes/{quote(scope_id, safe='')}/artifacts/atomic-memory/{quote(ref['artifact_id'], safe='')}"
+
+    def get_memory_entry(self, scope_id: str, citation: dict[str, Any]) -> dict[str, Any]:
+        reference = self._memory_reference(citation)
+        ref = reference.get("artifact", reference)
+        result = self._request(f"{self._memory_path(scope_id, ref)}/revisions/{ref['revision']}", method="GET")
+        if normalize_memory_reference(result) != ref or not isinstance(result.get("content"), dict):
+            raise PowerContextInvalidResponseError("PowerContext returned a different Artifact revision")  # noqa: TRY003
+        return result
+
+    def get_memory_state(self, scope_id: str, citation: dict[str, Any]) -> dict[str, Any]:
+        reference = self._memory_reference(citation)
+        ref = reference.get("artifact", reference)
+        path = f"{self._memory_path(scope_id, ref)}/state"
+        result = self._request(path, method="GET")
+        current = normalize_memory_reference(result)
+        if current is None or "artifact" not in current:
+            raise PowerContextInvalidResponseError("PowerContext returned invalid Atomic Memory state")  # noqa: TRY003
+        if current["artifact"] != ref:
+            raise PowerContextHTTPError(
+                409, path=path, message="Memory content revision changed; refresh before retrying"
+            )
+        return current
+
+    def revise_memory_entry(
+        self,
+        scope_id: str,
+        citation: dict[str, Any],
+        *,
+        kind: str,
+        text: str,
+    ) -> dict[str, Any]:
+        reference = self._memory_reference(citation)
+        ref = reference.get("artifact", reference)
+        path = self._memory_path(scope_id, ref)
+        response_headers: dict[str, str] = {}
+        current = self._request(path, method="GET", response_headers=response_headers)
+        if normalize_memory_reference(current) != ref:
+            raise PowerContextHTTPError(
+                409, path=path, message="Memory content revision changed; refresh before retrying"
+            )
+        etag = response_headers.get("ETag")
+        if not etag:
+            raise PowerContextInvalidResponseError("PowerContext omitted the required content ETag")  # noqa: TRY003
+        result = self._request(
+            path, {"content": {"kind": kind, "text": text}}, method="PUT", headers={"If-Match": etag}
+        )
+        updated = normalize_memory_reference(result)
+        if (
+            updated is None
+            or updated.get("artifact_id") != ref["artifact_id"]
+            or updated.get("family") != ref["family"]
+            or updated.get("revision", 0) < ref["revision"]
+        ):
+            raise PowerContextInvalidResponseError("PowerContext returned an invalid revised Artifact")  # noqa: TRY003
+        return result
+
+    def retire_memory_entry(
+        self,
+        scope_id: str,
+        citation: dict[str, Any],
+        *,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Compatibility tool name: forgetting is reversible, unlike terminal retirement."""
+        if reason:
+            raise ValueError("Atomic lifecycle operations do not accept the legacy reason field")  # noqa: TRY003
+        reference = self._memory_reference(citation)
+        if "artifact" not in reference:
+            reference = self.get_memory_state(scope_id, reference)
+        return self._request(
+            "/v1/atomic-memory/lifecycle", {"scope_id": scope_id, "target": reference, "state": "forgotten"}
+        )
+
+    def capture_content(
+        self,
+        scope_id: str,
+        *,
+        source_id: str,
+        content: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request(
+            "/v1/sources/content",
+            {"scope_id": scope_id, "source_id": source_id, "content": content, "metadata": metadata},
+        )
+
+    def flush_memory(self, scope_id: str) -> dict[str, Any]:
+        return self._request("/v1/memory/flush", {"scope_id": scope_id})

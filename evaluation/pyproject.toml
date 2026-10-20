@@ -1,0 +1,67 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "powercontext-eval"
+version = "0.1.0"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+  "fastapi>=0.116,<1",
+  "pydantic>=2.10,<3",
+  "typer>=0.16,<1",
+  "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+swebench-pro = "powercontext_eval_swebench_pro.cli:main"
+longmemeval-v2 = "powercontext_eval_longmemeval_v2.cli:main"
+work-continuity = "powercontext_eval_work_continuity.cli:main"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "prometheus-client>=0.21,<1",
+  "pytest>=9.0.2",
+  "ruff>=0.15.7",
+  "ty>=0.0.24",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "coding/swebench_pro/src/powercontext_eval_swebench_pro",
+  "coding/work_continuity/src/powercontext_eval_work_continuity",
+  "memory/longmemeval_v2/src/powercontext_eval_longmemeval_v2",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["/coding/swebench_pro", "/coding/work_continuity", "/memory/longmemeval_v2", "/README.md", "/pyproject.toml", "/uv.lock"]
+exclude = ["**/.venv", "**/node_modules", "**/dist", "**/__pycache__", "**/.ruff_cache", "**/.pytest_cache", "**/*.tsbuildinfo", "**/test-results", "**/playwright-report"]
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.11"
+
+[tool.ty.src]
+include = ["coding/swebench_pro/src", "coding/work_continuity/src", "memory/longmemeval_v2/src"]
+
+[tool.pytest.ini_options]
+testpaths = ["coding/swebench_pro/tests", "coding/work_continuity/tests", "memory/longmemeval_v2/tests"]
+addopts = ["--import-mode=importlib"]
+markers = [
+  "live: tests that require external services",
+]

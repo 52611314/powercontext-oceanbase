@@ -1,0 +1,243 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shlex
+import socket
+import subprocess
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+import uvicorn
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+from httpx import Client as HttpClient
+from pydantic import SecretStr
+from typer.testing import CliRunner
+
+from powercontext.builtin.persistence.sqlite import SQLiteConfig
+from powercontext.builtin.runtime import InferenceConfig
+from powercontext.cli.app import create_cli
+from powercontext.server.factory import create_server_app
+from powercontext.server.settings import AccessControlConfig, BearerAuthConfig, McpConfig, ServerSettings
+from tests.e2e.atomic_memory_models import independent_atomic_memory_model
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WORKBUDDY_PLUGIN = PROJECT_ROOT / "integrations" / "workbuddy" / "plugins" / "powercontext"
+AUTH_TOKEN = "workbuddy-e2e-token"  # noqa: S105 - non-secret test credential.
+AUTHORIZATION = f"Bearer {AUTH_TOKEN}"
+_AUTHORIZATION_TEMPLATE = "${POWERCONTEXT_WORKBUDDY_AUTHORIZATION:-}"
+
+
+@pytest.mark.parametrize("authentication_enabled", [False, True], ids=["public", "authenticated"])
+def test_workbuddy_hook_and_mcp_share_one_service_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authentication_enabled: bool,
+) -> None:
+    monkeypatch.setattr(
+        "pydantic_ai.models.infer_model",
+        lambda _: independent_atomic_memory_model("Use the WorkBuddy service chain for project context."),
+    )
+    app = create_server_app(
+        settings=ServerSettings(
+            auth=BearerAuthConfig(
+                token=SecretStr(AUTH_TOKEN) if authentication_enabled else None,
+            ),
+            access=AccessControlConfig(mode="enforced" if authentication_enabled else "disabled"),
+            database=SQLiteConfig(url=f"sqlite+aiosqlite:///{tmp_path / 'runtime.db'}"),
+            inference=InferenceConfig(generation_model="test"),
+            mcp=McpConfig(enabled=True),
+        )
+    )
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    host, port = listener.getsockname()
+    base_url = f"http://{host}:{port}"
+    server = uvicorn.Server(uvicorn.Config(app, log_level="critical", lifespan="on"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    try:
+        _wait_until_started(server, thread)
+        home = tmp_path / "WorkBuddy Home"
+        monkeypatch.setenv("WORKBUDDY_HOME", str(home))
+        monkeypatch.setenv("POWERCONTEXT_HOME", str(tmp_path / "PowerContext Data"))
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            create_cli(), ["setup", "workbuddy", "--source", str(PROJECT_ROOT), "--server-url", base_url, "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        report = json.loads(result.output)["hosts"]["workbuddy"]
+        assert report["setup"] == "complete"
+        assert report["checks"]["server_liveness"]["ok"]
+        assert report["checks"]["server_readiness"]["ok"]
+        configured_hook = home / "hooks/workbuddy_powercontext_hook.py"
+        before = configured_hook.read_bytes()
+        updated = CliRunner().invoke(create_cli(), ["config", "agent", "workbuddy", "--server-url", base_url, "--json"])
+        assert updated.exit_code == 0, updated.output
+        assert configured_hook.read_bytes() == before
+        diagnosed = CliRunner().invoke(create_cli(), ["doctor", "--json"])
+        assert diagnosed.exit_code == 0, diagnosed.output
+        assert set(json.loads(diagnosed.output)["hosts"]) == {"workbuddy"}
+
+        settings = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+        command = _powercontext_hook_command(settings)
+        authorization = AUTHORIZATION if authentication_enabled else None
+        environment = _workbuddy_environment(base_url, authorization=authorization)
+        scope_id = _resolve_default_scope(base_url, authorization=authorization)
+
+        captured = _run_hook(
+            command,
+            environment=environment,
+            prompt="Remember the WorkBuddy project context service.",
+            prompt_id="prompt-1",
+        )
+        captured_context = json.loads(captured.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert captured_context == ""
+        assert AUTH_TOKEN not in captured.stderr
+
+        recalled = _run_hook(
+            command,
+            environment=environment,
+            prompt="Which service chain should WorkBuddy use?",
+            prompt_id="prompt-2",
+        )
+        context = json.loads(recalled.stdout)["hookSpecificOutput"]["additionalContext"]
+        envelope = json.loads(context.splitlines()[-2])
+        assert envelope["items"][0]["content"] == "Use the WorkBuddy service chain for project context."
+        assert AUTH_TOKEN not in recalled.stderr
+
+        mcp_entry = json.loads((home / "mcp.json").read_text(encoding="utf-8"))["mcpServers"]["powercontext"]
+        plugin_mcp_entry = json.loads((WORKBUDDY_PLUGIN / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
+            "powercontext"
+        ]
+        assert mcp_entry == {**plugin_mcp_entry, "url": "${POWERCONTEXT_WORKBUDDY_SERVER_URL:-" + base_url + "}/mcp"}
+        endpoint, headers = _workbuddy_mcp_connection(mcp_entry, environment)
+
+        async def verify_mcp() -> None:
+            async with Client(StreamableHttpTransport(endpoint, headers=headers)) as client:
+                result = await client.call_tool(
+                    "search_memory",
+                    {
+                        "scope_id": scope_id,
+                        "query": "WorkBuddy service chain",
+                    },
+                )
+            structured = result.structured_content or {}
+            hits = structured.get("hits")
+            assert isinstance(hits, list)
+            assert hits[0]["memory"]["text"] == "Use the WorkBuddy service chain for project context."
+
+        asyncio.run(verify_mcp())
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        assert not thread.is_alive()
+
+
+def _powercontext_hook_command(settings: dict[str, Any]) -> list[str]:
+    hooks = settings["hooks"]
+    assert isinstance(hooks, dict)
+    matchers = hooks["UserPromptSubmit"]
+    assert isinstance(matchers, list)
+    for matcher in matchers:
+        assert isinstance(matcher, dict)
+        entries = matcher["hooks"]
+        assert isinstance(entries, list)
+        for entry in entries:
+            assert isinstance(entry, dict)
+            command = entry.get("command")
+            if isinstance(command, str) and "workbuddy_powercontext_hook.py" in command:
+                return shlex.split(command)
+    raise AssertionError
+
+
+def _workbuddy_environment(base_url: str, *, authorization: str | None) -> dict[str, str]:
+    environment: dict[str, str] = {
+        **os.environ,
+        "POWERCONTEXT_WORKBUDDY_FLUSH_ON_CAPTURE": "true",
+        "POWERCONTEXT_WORKBUDDY_HTTP_BUDGET_SECONDS": "10",
+        "POWERCONTEXT_WORKBUDDY_REQUEST_TIMEOUT_SECONDS": "5",
+        "POWERCONTEXT_WORKBUDDY_SERVER_URL": base_url,
+    }
+    environment.pop("POWERCONTEXT_WORKBUDDY_AUTHORIZATION", None)
+    if authorization is not None:
+        environment["POWERCONTEXT_WORKBUDDY_AUTHORIZATION"] = authorization
+    return environment
+
+
+def _resolve_default_scope(base_url: str, *, authorization: str | None) -> str:
+    headers = {} if authorization is None else {"Authorization": authorization}
+    with HttpClient(base_url=base_url, headers=headers) as client:
+        response = client.post(
+            "/v1/scope-bindings/resolve",
+            json={"binding_keys": []},
+        )
+    response.raise_for_status()
+    scope_id = response.json()["scope_id"]
+    assert isinstance(scope_id, str)
+    return scope_id
+
+
+def _run_hook(
+    command: list[str],
+    *,
+    environment: dict[str, str],
+    prompt: str,
+    prompt_id: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env=environment,
+        input=json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "cwd": str(PROJECT_ROOT),
+            "prompt": prompt,
+            "session_id": "workbuddy-e2e-session",
+            "prompt_id": prompt_id,
+        }),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=15,
+    )
+
+
+def _workbuddy_mcp_connection(
+    entry: dict[str, object],
+    environment: dict[str, str],
+) -> tuple[str, dict[str, str]]:
+    configured_url = environment["POWERCONTEXT_WORKBUDDY_SERVER_URL"]
+    assert entry["url"] == f"${{POWERCONTEXT_WORKBUDDY_SERVER_URL:-{configured_url}}}/mcp"
+    assert entry["headers"] == {"Authorization": _AUTHORIZATION_TEMPLATE}
+    endpoint = f"{configured_url}/mcp"
+    authorization = environment.get("POWERCONTEXT_WORKBUDDY_AUTHORIZATION", "")
+    return endpoint, {"Authorization": authorization}
+
+
+def _wait_until_started(server: uvicorn.Server, thread: threading.Thread) -> None:
+    deadline = time.monotonic() + 10
+    while thread.is_alive() and not server.started and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.started

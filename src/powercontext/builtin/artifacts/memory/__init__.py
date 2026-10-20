@@ -1,0 +1,157 @@
+# Copyright (c) 2026 OceanBase.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Artifact-native Memory domain and service contracts."""
+
+from powercontext.builtin.artifacts.memory.errors import (
+    CapabilityNotSupportedError,
+    InvalidEmbeddingError,
+    InvalidMemoryCandidateError,
+    InvalidMemoryEvidenceError,
+    MemoryBackendConfigurationError,
+    MemoryCapacityExceededError,
+    MemoryEntryInactiveError,
+    MemoryEntryNotFoundError,
+    MemoryLayerError,
+    MemoryWriteRejectedError,
+)
+from powercontext.builtin.artifacts.memory.extraction import (
+    DefaultMemoryEvidenceProjector,
+    KnownMemoryEntryKind,
+    LLMMemoryCandidatePipeline,
+    MemoryEvidenceProjector,
+    MemoryExtractionCandidate,
+    MemoryExtractionCurrentEntry,
+    MemoryExtractionEvidence,
+    MemoryExtractionInput,
+    MemoryExtractionIntent,
+    MemoryExtractionOutput,
+)
+from powercontext.builtin.artifacts.memory.models import (
+    EmbeddingProfile,
+    MemoryCapabilities,
+    MemoryCapacity,
+    MemoryCapacityBudget,
+    MemoryCapacityDimension,
+    MemoryChange,
+    MemoryChangeOp,
+    MemoryChannelHit,
+    MemoryCompactionPolicy,
+    MemoryEntryInput,
+    MemoryEntryState,
+    MemoryEntryVersion,
+    MemoryHit,
+    MemoryMatchedBy,
+    MemoryQueryEmbedding,
+    MemoryRerankTrace,
+    MemoryRevisionChanges,
+    MemorySearchMode,
+    MemorySearchResult,
+    MemoryUsedSearchMode,
+)
+from powercontext.builtin.artifacts.memory.prompts import (
+    CONVERSATION_MEMORY_EXTRACTION_INSTRUCTIONS,
+    CONVERSATION_MEMORY_EXTRACTION_INSTRUCTIONS_VERSION,
+    MEMORY_EXTRACTION_INSTRUCTIONS,
+    MEMORY_EXTRACTION_INSTRUCTIONS_VERSION,
+    MemoryExtractionProfile,
+    memory_extraction_instructions,
+    memory_extraction_instructions_version,
+)
+from powercontext.builtin.artifacts.memory.protocols import (
+    CandidatePipeline,
+    MemoryCandidateRequest,
+    MemoryWriteAssessment,
+    MemoryWriteGate,
+    MemoryWriteGateRequest,
+    MemoryWriteRejectionCode,
+    MemoryWriteVerdict,
+)
+from powercontext.builtin.artifacts.memory.reranking import (
+    MEMORY_RERANK_INSTRUCTIONS,
+    MEMORY_RERANK_INSTRUCTIONS_VERSION,
+    LLMMemoryReranker,
+    MemoryRerankCandidate,
+    MemoryRerankDecision,
+    MemoryReranker,
+    MemoryRerankInput,
+    MemoryRerankMode,
+    MemoryRerankOutput,
+)
+
+__all__ = [
+    "CONVERSATION_MEMORY_EXTRACTION_INSTRUCTIONS",
+    "CONVERSATION_MEMORY_EXTRACTION_INSTRUCTIONS_VERSION",
+    "MEMORY_EXTRACTION_INSTRUCTIONS",
+    "MEMORY_EXTRACTION_INSTRUCTIONS_VERSION",
+    "MEMORY_RERANK_INSTRUCTIONS",
+    "MEMORY_RERANK_INSTRUCTIONS_VERSION",
+    "CandidatePipeline",
+    "CapabilityNotSupportedError",
+    "DefaultMemoryEvidenceProjector",
+    "EmbeddingProfile",
+    "InvalidEmbeddingError",
+    "InvalidMemoryCandidateError",
+    "InvalidMemoryEvidenceError",
+    "KnownMemoryEntryKind",
+    "LLMMemoryCandidatePipeline",
+    "LLMMemoryReranker",
+    "MemoryBackendConfigurationError",
+    "MemoryCandidateRequest",
+    "MemoryCapabilities",
+    "MemoryCapacity",
+    "MemoryCapacityBudget",
+    "MemoryCapacityDimension",
+    "MemoryCapacityExceededError",
+    "MemoryChange",
+    "MemoryChangeOp",
+    "MemoryChannelHit",
+    "MemoryCompactionPolicy",
+    "MemoryEntryInactiveError",
+    "MemoryEntryInput",
+    "MemoryEntryNotFoundError",
+    "MemoryEntryState",
+    "MemoryEntryVersion",
+    "MemoryEvidenceProjector",
+    "MemoryExtractionCandidate",
+    "MemoryExtractionCurrentEntry",
+    "MemoryExtractionEvidence",
+    "MemoryExtractionInput",
+    "MemoryExtractionIntent",
+    "MemoryExtractionOutput",
+    "MemoryExtractionProfile",
+    "MemoryHit",
+    "MemoryLayerError",
+    "MemoryMatchedBy",
+    "MemoryQueryEmbedding",
+    "MemoryRerankCandidate",
+    "MemoryRerankDecision",
+    "MemoryRerankInput",
+    "MemoryRerankMode",
+    "MemoryRerankOutput",
+    "MemoryRerankTrace",
+    "MemoryReranker",
+    "MemoryRevisionChanges",
+    "MemorySearchMode",
+    "MemorySearchResult",
+    "MemoryUsedSearchMode",
+    "MemoryWriteAssessment",
+    "MemoryWriteGate",
+    "MemoryWriteGateRequest",
+    "MemoryWriteRejectedError",
+    "MemoryWriteRejectionCode",
+    "MemoryWriteVerdict",
+    "memory_extraction_instructions",
+    "memory_extraction_instructions_version",
+]
