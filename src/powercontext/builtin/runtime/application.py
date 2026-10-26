@@ -249,6 +249,7 @@ from powercontext.builtin.runtime.recall_sufficiency import (
     build_recall_candidates,
     recall_effort,
 )
+from powercontext.builtin.runtime.source_lifecycle import LifecycleApplication
 from powercontext.builtin.runtime.statistics import RelationalScopedStatistics, overview_selection
 from powercontext.builtin.scope import ScopeApplication, ScopeDescriptor, ScopeSelection
 from powercontext.builtin.scope.subject_sources import SubjectSourceService
@@ -299,6 +300,7 @@ if TYPE_CHECKING:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from powercontext.builtin.handoff_report.application import HandoffReportApplication
+    from powercontext.builtin.persistence.database import AsyncDatabase
     from powercontext.builtin.runtime.artifact_processing import ArtifactProcessingSupervisors
 
 
@@ -2670,10 +2672,15 @@ class ScopedTopicMemoryApplication:
             raise InvalidRuntimeRequestError("topic-memory-query-terms")
 
         used_fallback = False
+        original_limit = request.limit
         async with self._runtime._scoped_operation(
             self.scope_id,
             embedding_purpose=ModelUsagePurpose.TOPIC_MEMORY_RECALL,
         ):
+            blocked = await self._runtime.lifecycle.for_scope(self.scope_id).blocked_topic_artifact_ids()
+            effective_request = (
+                request if not blocked else request.model_copy(update={"limit": MAX_TOPIC_MEMORY_SEARCH_LIMIT})
+            )
             embedding = self._runtime._topic_memory_embedding_model if allow_embedding else None
             browse = self._runtime._topic_memory_browse
             if embedding is not None and browse is not None and not await browse(self.scope_id, limit=1, after=None):
@@ -2682,20 +2689,21 @@ class ScopedTopicMemoryApplication:
                 result = await search(
                     self.scope_id,
                     query,
-                    limit=request.limit,
+                    limit=effective_request.limit,
                     mode="fts",
                     **_admission_keyword(admission),
                 )
                 result = result.model_copy(update={"embedding_calls": 0})
             else:
                 result, used_fallback = await self._search_with_embedding(
-                    request,
+                    effective_request,
                     embedding,
                     search,
                     admission,
                     query_embedding,
                     embedding_timeout_seconds,
                 )
+            result = _without_blocked_topics(result, blocked, original_limit)
         observer = self._runtime._topic_memory_search_observer
         if observer is not None:
             try:
@@ -3056,6 +3064,7 @@ class BuiltinRuntime:
         remote_ingestion: RemoteIngestion | None = None,
         dream_service: DreamService | None = None,
         generation_concurrency: int = 4,
+        lifecycle_database: AsyncDatabase | None = None,
     ) -> None:
         if source_window_limit < 1:
             raise _RuntimeConfigurationError("source_window_limit")
@@ -3139,6 +3148,7 @@ class BuiltinRuntime:
         self.work = WorkApplication(self)
         self.memory = MemoryApplication(self)
         self.topic_memory = TopicMemoryApplication(self)
+        self.lifecycle = LifecycleApplication(self, lifecycle_database)
         self.records = RecordApplication(self)
         self.prompts = PromptApplication(self)
         self.review = ReviewApplication(self)
@@ -3552,6 +3562,19 @@ def _bounded_topic_memory_recall_query(query: str) -> str:
         selected.append(term[:available])
         characters += separator + min(len(term), available)
     return " ".join(selected)
+
+
+def _without_blocked_topics(
+    result: TopicMemorySearchResult,
+    blocked: frozenset[str],
+    limit: int,
+) -> TopicMemorySearchResult:
+    """Remove Topics whose supporting evidence has been withdrawn."""
+
+    if not blocked:
+        return result
+    hits = tuple(hit for hit in result.hits if hit.artifact_ref.artifact_id not in blocked)[:limit]
+    return result.model_copy(update={"hits": hits})
 
 
 async def _head_or_none(service: MemoryService, artifact_id: str) -> Memory | None:

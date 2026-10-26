@@ -1022,6 +1022,35 @@ TOPIC_MEMORY_TABLES = (
     TOPIC_MEMORY_ACTIVE_CHUNKS_TABLE,
 )
 
+MAX_SOURCE_LIFECYCLE_NODE_ID_LENGTH = 128
+
+# One dependency node registered by the Source lifecycle service. The reference
+# column holds the caller-supplied SourceRef, MemoryCitation, or Topic ArtifactRef
+# so audit reads can return the original binding without recomputing it.
+SOURCE_LIFECYCLE_NODES_TABLE = Table(
+    "pc_source_lifecycle_nodes",
+    SHARED_METADATA,
+    Column("scope_id", identity_string(MAX_SCOPE_ID_LENGTH), primary_key=True),
+    Column("node_id", identity_string(MAX_SOURCE_LIFECYCLE_NODE_ID_LENGTH), primary_key=True),
+    Column("kind", identity_string(8), nullable=False),
+    Column("reference", _canonical_payload_type(), nullable=False),
+    Column("parents", _canonical_payload_type(), nullable=False),
+    Column("policy", identity_string(4), nullable=False),
+    Column("available", Boolean, nullable=False),
+    Column("source_revision", Integer),
+    Column("source_sequence", BigInteger),
+    Column("event_digest", identity_string(64)),
+    ForeignKeyConstraint(("scope_id",), ("pc_scopes.scope_id",), ondelete="CASCADE"),
+    CheckConstraint(
+        "kind IN ('source', 'memory', 'topic')",
+        name="ck_pc_source_lifecycle_nodes_kind",
+    ),
+    CheckConstraint(
+        "policy IN ('all', 'any')",
+        name="ck_pc_source_lifecycle_nodes_policy",
+    ),
+)
+
 # OceanBase requires FK column lengths to match the parent. A normalized-key
 # fingerprint keeps composite indexes within 3072 bytes without narrowing any
 # Unicode identity or label. Queries also compare the full key, not just its hash.
@@ -1187,5 +1216,10 @@ BUILTIN_TABLES = (
     + MEMORY_TABLES
     + STATISTICS_TABLES
     + RECURRENCE_TABLES
-    + (ARTIFACT_TAGS_TABLE, DREAM_RUNS_TABLE, RECEIPT_MIGRATION_REVIEW_TABLE)
+    + (
+        ARTIFACT_TAGS_TABLE,
+        DREAM_RUNS_TABLE,
+        RECEIPT_MIGRATION_REVIEW_TABLE,
+        SOURCE_LIFECYCLE_NODES_TABLE,
+    )
 )
