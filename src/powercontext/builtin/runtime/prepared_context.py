@@ -34,6 +34,11 @@ from powercontext.builtin.runtime.prepared_code import (
     PreparedCodeCandidate,
     assemble_code,
 )
+from powercontext.builtin.runtime.prepared_selection import (
+    EvidenceCandidate,
+    rank_evidence_candidates,
+    sentence_spans,
+)
 from powercontext.builtin.runtime.prepared_text import (
     TRUST_POLICY,
     ContextTextItem,
@@ -43,6 +48,8 @@ from powercontext.builtin.runtime.prepared_text import (
 from powercontext.builtin.runtime.recall_sufficiency import RecallBudgetView
 
 _MIN_TRUNCATED_CONTENT_BYTES = 64
+_MIN_FRAGMENT_CHARS = 40
+_MIN_EXTENSION_CHARS = 24
 _ELLIPSIS = "…"
 _BEGIN_MARKER = "BEGIN_POWERCONTEXT_PREPARED_CONTEXT_V1"
 _END_MARKER = "END_POWERCONTEXT_PREPARED_CONTEXT_V1"
@@ -56,6 +63,8 @@ class _PreparedContextEntry:
     citation: dict[str, object]
     content: str
     truncated: bool
+    start: int | None = None
+    end: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,30 @@ class PreparedContextOmissions:
 
 
 @dataclass(frozen=True)
+class MemoryEntryAddress:
+    """Identify one exact Memory entry version across Scope boundaries."""
+
+    memory: ArtifactAddress
+    entry_id: str
+    entry_version_id: str
+
+
+@dataclass(frozen=True)
+class PreparedContextFragment:
+    """One literal character span of an exact Memory entry version.
+
+    ``text`` is always the original ``entry.text[start:end]``: selection never rewrites,
+    translates, or summarizes evidence, and the half-open character coordinates let a caller
+    verify the span against the cited entry.
+    """
+
+    address: MemoryEntryAddress
+    start: int
+    end: int
+    text: str
+
+
+@dataclass(frozen=True)
 class PreparedContextBuild:
     """Final public context and the exact origins selected to produce it.
 
@@ -106,15 +139,7 @@ class PreparedContextBuild:
     origins: tuple[PreparedContextOrigin, ...]
     omissions: PreparedContextOmissions = PreparedContextOmissions()
     code_origins: tuple[CodeEvidenceRef, ...] = ()
-
-
-@dataclass(frozen=True)
-class MemoryEntryAddress:
-    """Identify one exact Memory entry version across Scope boundaries."""
-
-    memory: ArtifactAddress
-    entry_id: str
-    entry_version_id: str
+    fragments: tuple[PreparedContextFragment, ...] = ()
 
 
 PreparedContextOrigin = MemoryCitation | ArtifactRef | MemoryEntryAddress | ArtifactAddress
@@ -127,6 +152,14 @@ class PreparedMemoryCandidates:
     scope_id: str
     memory_ref: ArtifactRef | None = None
     hits: tuple[MemoryHit, ...] = ()
+
+
+@dataclass(frozen=True)
+class _EvidenceDocument:
+    """One recalled Memory entry text with its exact cross-Scope address."""
+
+    address: MemoryEntryAddress
+    text: str
 
 
 @dataclass(frozen=True)
@@ -211,6 +244,12 @@ class PreparedContextBuilder:
         profile_candidates: Sequence[PreparedProfileCandidate] = (),
         code_candidates: Sequence[PreparedCodeCandidate] = (),
     ) -> PreparedContextBuild:
+        if request.evidence_selection:
+            return self._build_evidence_selection(
+                request=request,
+                current_scope_id=current_scope_id,
+                memory_candidates=memory_candidates,
+            )
         if request.include_code:
 
             def historical(history_request: PrepareContextRequest, entries: int) -> PreparedContextBuild:
@@ -235,7 +274,7 @@ class PreparedContextBuilder:
         if sum(len(candidates.hits) for candidates in experience_candidates) > self.experience_candidate_limit:
             raise PreparedContextInvariantError("experience-candidate-limit")
 
-        content, origins, omissions = self._select_entries(
+        content, origins, omissions, _fragments = self._select_entries(
             request=request,
             current_scope_id=current_scope_id,
             memory_candidates=memory_candidates,
@@ -254,6 +293,36 @@ class PreparedContextBuilder:
             context=PreparedContext(status="ready", content=content, content_bytes=content_bytes),
             origins=origins,
             omissions=omissions,
+        )
+
+    def _build_evidence_selection(
+        self,
+        *,
+        request: PrepareContextRequest,
+        current_scope_id: str | None,
+        memory_candidates: Sequence[PreparedMemoryCandidates],
+    ) -> PreparedContextBuild:
+        """Deliver ranked literal Memory spans instead of whole entries.
+
+        Selection only covers Memory candidates, which is the scope of the request contract:
+        Code, TopicMemory, Experience, and Profile are deliberately not assembled on this path.
+        """
+
+        content, origins, omissions, fragments = self._select_evidence(
+            request=request,
+            current_scope_id=current_scope_id,
+            memory_candidates=memory_candidates,
+        )
+        if content is None:
+            return PreparedContextBuild(context=self.empty(), origins=(), omissions=omissions)
+        content_bytes = len(content.encode("utf-8"))
+        if content_bytes > request.max_bytes:
+            raise PreparedContextInvariantError("output-budget")
+        return PreparedContextBuild(
+            context=PreparedContext(status="ready", content=content, content_bytes=content_bytes),
+            origins=origins,
+            omissions=omissions,
+            fragments=fragments,
         )
 
     def probe_budget(
@@ -277,7 +346,7 @@ class PreparedContextBuilder:
         counters because both go through :meth:`_select_entries`.
         """
 
-        content, origins, omissions = self._select_entries(
+        content, origins, omissions, _fragments = self._select_entries(
             request=request,
             current_scope_id=current_scope_id,
             memory_candidates=memory_candidates,
@@ -303,15 +372,26 @@ class PreparedContextBuilder:
         topic_memory_hits: Sequence[TopicMemorySearchHit],
         experience_candidates: Sequence[PreparedExperienceCandidates],
         profile_candidates: Sequence[PreparedProfileCandidate],
-    ) -> tuple[str | None, tuple[PreparedContextOrigin, ...], PreparedContextOmissions]:
+    ) -> tuple[
+        str | None,
+        tuple[PreparedContextOrigin, ...],
+        PreparedContextOmissions,
+        tuple[PreparedContextFragment, ...],
+    ]:
         """Run one complete pure selection pass and render it.
 
-        Returns ``(content, origins, omissions)``; ``content`` is ``None`` exactly when nothing
-        was selected, which is the empty-result case for both paths. This is the single
-        selection path shared by :meth:`build_scopes_result` and :meth:`probe_budget`, so the
-        probe's counters always describe the selection the build would actually perform.
+        Returns ``(content, origins, omissions, fragments)``; ``content`` is ``None`` exactly
+        when nothing was selected, which is the empty-result case for every path. This is the
+        single selection path shared by :meth:`build_scopes_result` and :meth:`probe_budget`,
+        so the probe's counters always describe the selection the build would actually perform.
         """
 
+        if request.evidence_selection:
+            return self._select_evidence(
+                request=request,
+                current_scope_id=current_scope_id,
+                memory_candidates=memory_candidates,
+            )
         if request.assembly is not None:
             return self._select_text(
                 request,
@@ -344,8 +424,217 @@ class PreparedContextBuilder:
         )[: self.experience_entry_limit]
         entries, omissions = self._fit_entries(request, memory_entries, topic_memory_entries, experience_entries)
         if not entries:
-            return None, (), omissions
-        return _render(entries), tuple(entry.origin for entry in entries), omissions
+            return None, (), omissions, ()
+        return _render(entries), tuple(entry.origin for entry in entries), omissions, ()
+
+    def _select_evidence(
+        self,
+        *,
+        request: PrepareContextRequest,
+        current_scope_id: str | None,
+        memory_candidates: Sequence[PreparedMemoryCandidates],
+    ) -> tuple[
+        str | None,
+        tuple[PreparedContextOrigin, ...],
+        PreparedContextOmissions,
+        tuple[PreparedContextFragment, ...],
+    ]:
+        """Rank literal spans of the recalled Memory entries and fit them into ``max_bytes``."""
+
+        documents = self._evidence_documents(memory_candidates)
+        if not documents:
+            return None, (), PreparedContextOmissions(), ()
+        ranked = rank_evidence_candidates(tuple(document.text for document in documents), request.query)
+        selected: list[PreparedContextFragment] = []
+        selected_documents: list[int] = []
+        selected_texts: set[str] = set()
+        occupied: dict[int, list[tuple[int, int]]] = {}
+        truncated_items = 0
+        dropped_items = 0
+
+        def record(document_index: int, fragment: PreparedContextFragment) -> None:
+            selected.append(fragment)
+            selected_documents.append(document_index)
+            selected_texts.add(fragment.text)
+            occupied.setdefault(document_index, []).append((fragment.start, fragment.end))
+
+        # Whole spans first: an intact sentence keeps its exact coordinates and is the only
+        # form that can complete a gold span, so it must win over a truncated prefix.
+        for candidate in ranked:
+            if _overlaps(occupied.get(candidate.document_index, ()), candidate.start, candidate.end):
+                continue
+            fragment = _fragment_from(documents[candidate.document_index], candidate.start, candidate.end)
+            if fragment.text in selected_texts:
+                continue
+            if _selection_bytes((*selected, fragment)) <= request.max_bytes:
+                record(candidate.document_index, fragment)
+                continue
+            dropped_items += 1
+
+        # Extending an already cited span costs content bytes only, while another fragment also
+        # pays a full citation, so leftover budget buys more literal evidence here.
+        self._extend_selected(documents, selected, selected_documents, occupied, request.max_bytes)
+        selected_texts = {fragment.text for fragment in selected}
+
+        # Spend whatever is left on one honest prefix, then stop: a second truncated prefix
+        # would only push out the intact evidence already selected.
+        remaining = request.max_bytes - _selection_bytes(selected)
+        if remaining >= _MIN_TRUNCATED_CONTENT_BYTES:
+            prefix = self._fit_evidence_prefix(documents, ranked, selected, occupied, selected_texts, request.max_bytes)
+            if prefix is not None:
+                record(*prefix)
+                truncated_items += 1
+
+        if not selected:
+            return None, (), PreparedContextOmissions(), ()
+        content = _render_selection(selected)
+        origins = tuple(fragment.address for fragment in selected)
+        omissions = PreparedContextOmissions(
+            truncated_items=truncated_items,
+            dropped_items=dropped_items,
+            dropped_no_fitting_truncation=dropped_items,
+        )
+        return content, origins, omissions, tuple(selected)
+
+    def _extend_selected(
+        self,
+        documents: Sequence[_EvidenceDocument],
+        selected: list[PreparedContextFragment],
+        document_indexes: Sequence[int],
+        occupied: dict[int, list[tuple[int, int]]],
+        max_bytes: int,
+    ) -> None:
+        """Grow selected spans through later sentence boundaries with the leftover budget.
+
+        A retrieval hit often hides the answering sentence after the sentence that matched the
+        query's rarest term. Extending costs content bytes only, so this is the cheapest way to
+        reach the later part of a document without paying another citation.
+        """
+
+        for position in range(len(selected)):
+            document_index = document_indexes[position]
+            document = documents[document_index]
+            fragment = selected[position]
+            others = [span for span in occupied.get(document_index, ()) if span != (fragment.start, fragment.end)]
+            right_limit = min((start for start, _ in others if start >= fragment.end), default=len(document.text))
+            end = fragment.end
+            for _, span_end in sentence_spans(document.text):
+                if span_end <= end:
+                    continue
+                if span_end > right_limit:
+                    break
+                candidate = _fragment_from(document, fragment.start, span_end)
+                if _bytes_with(selected, position, candidate) <= max_bytes:
+                    end = span_end
+                    continue
+                partial = self._fit_partial_end(document, selected, position, fragment.start, end, span_end, max_bytes)
+                if partial is not None:
+                    end = partial
+                break
+            if end == fragment.end:
+                continue
+            extended = _fragment_from(document, fragment.start, end)
+            selected[position] = extended
+            occupied[document_index] = [
+                span for span in occupied.get(document_index, ()) if span != (fragment.start, fragment.end)
+            ]
+            occupied[document_index].append((fragment.start, end))
+
+    def _fit_partial_end(
+        self,
+        document: _EvidenceDocument,
+        selected: Sequence[PreparedContextFragment],
+        position: int,
+        start: int,
+        end: int,
+        target_end: int,
+        max_bytes: int,
+    ) -> int | None:
+        lower = end + _MIN_EXTENSION_CHARS
+        upper = target_end
+        best: int | None = None
+        while lower <= upper:
+            middle = (lower + upper) // 2
+            candidate = _fragment_from(document, start, middle)
+            if _bytes_with(selected, position, candidate) <= max_bytes:
+                best = middle
+                lower = middle + 1
+            else:
+                upper = middle - 1
+        if best is None:
+            return None
+        boundary = document.text.rfind(" ", end, best)
+        return boundary if boundary >= end + _MIN_EXTENSION_CHARS else best
+
+    def _fit_evidence_prefix(
+        self,
+        documents: Sequence[_EvidenceDocument],
+        ranked: Sequence[EvidenceCandidate],
+        selected: Sequence[PreparedContextFragment],
+        occupied: dict[int, list[tuple[int, int]]],
+        selected_texts: set[str],
+        max_bytes: int,
+    ) -> tuple[int, PreparedContextFragment] | None:
+        for candidate in ranked:
+            if _overlaps(occupied.get(candidate.document_index, ()), candidate.start, candidate.end):
+                continue
+            document = documents[candidate.document_index]
+            lower = candidate.start + _MIN_FRAGMENT_CHARS
+            upper = candidate.end
+            best: PreparedContextFragment | None = None
+            while lower <= upper:
+                middle = (lower + upper) // 2
+                fragment = _fragment_from(document, candidate.start, middle)
+                if fragment.text in selected_texts:
+                    lower = middle + 1
+                    continue
+                if _selection_bytes((*selected, fragment)) <= max_bytes:
+                    best = fragment
+                    lower = middle + 1
+                else:
+                    upper = middle - 1
+            if best is None:
+                continue
+            end = best.end
+            if end < candidate.end:
+                boundary = document.text.rfind(" ", best.start, end)
+                if boundary >= best.start + _MIN_FRAGMENT_CHARS:
+                    best = _fragment_from(document, best.start, boundary)
+            if best.text in selected_texts:
+                continue
+            return candidate.document_index, best
+        return None
+
+    def _evidence_documents(
+        self, memory_candidates: Sequence[PreparedMemoryCandidates]
+    ) -> tuple[_EvidenceDocument, ...]:
+        documents: list[_EvidenceDocument] = []
+        seen: set[tuple[str, str]] = set()
+        for candidates in memory_candidates:
+            if candidates.hits and candidates.memory_ref is None:
+                raise PreparedContextInvariantError("memory-ref-missing")
+            for hit in candidates.hits:
+                if hit.memory_ref != candidates.memory_ref:
+                    raise PreparedContextInvariantError("memory-ref-mismatch")
+                key = (hit.entry_id, hit.entry_version_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not hit.entry_id.strip() or not hit.entry_version_id.strip() or not hit.text.strip():
+                    continue
+                if not candidates.scope_id:
+                    raise PreparedContextInvariantError("scope-id-missing")
+                documents.append(
+                    _EvidenceDocument(
+                        address=MemoryEntryAddress(
+                            memory=ArtifactAddress(scope_id=candidates.scope_id, artifact=hit.memory_ref),
+                            entry_id=hit.entry_id,
+                            entry_version_id=hit.entry_version_id,
+                        ),
+                        text=hit.text,
+                    )
+                )
+        return tuple(documents)
 
     def _select_text(
         self,
@@ -356,7 +645,12 @@ class PreparedContextBuilder:
         experience_candidates: Sequence[PreparedExperienceCandidates],
         profile_candidates: Sequence[PreparedProfileCandidate],
         topic_memory_hits: Sequence[TopicMemorySearchHit],
-    ) -> tuple[str | None, tuple[PreparedContextOrigin, ...], PreparedContextOmissions]:
+    ) -> tuple[
+        str | None,
+        tuple[PreparedContextOrigin, ...],
+        PreparedContextOmissions,
+        tuple[PreparedContextFragment, ...],
+    ]:
         assembly = request.assembly
         if assembly is None:
             raise PreparedContextInvariantError("text-assembly-missing")
@@ -429,9 +723,9 @@ class PreparedContextBuilder:
             dropped_no_fitting_truncation=dropped_no_fitting_truncation,
         )
         if not included:
-            return None, (), omissions
+            return None, (), omissions, ()
         content = render_context_text(included, assembly)
-        return content, tuple(origins), omissions
+        return content, tuple(origins), omissions, ()
 
     def _profile_entries(self, candidates: Sequence[PreparedProfileCandidate]) -> tuple[_PreparedContextEntry, ...]:
         entries = []
@@ -717,7 +1011,61 @@ def _render_entry(entry: _PreparedContextEntry) -> dict[str, object]:
     }
     if entry.kind != "memory":
         rendered["kind"] = entry.kind
+    if entry.start is not None and entry.end is not None:
+        rendered["start"] = entry.start
+        rendered["end"] = entry.end
     return rendered
+
+
+def _fragment_from(document: _EvidenceDocument, start: int, end: int) -> PreparedContextFragment:
+    return PreparedContextFragment(
+        address=document.address,
+        start=start,
+        end=end,
+        text=document.text[start:end],
+    )
+
+
+def _fragment_entry(fragment: PreparedContextFragment) -> _PreparedContextEntry:
+    """Render one selected span with the citation shape the selection contract requires."""
+
+    address = fragment.address
+    return _PreparedContextEntry(
+        origin=address,
+        kind="memory",
+        citation={
+            "scope_id": address.memory.scope_id,
+            "memory_ref": address.memory.artifact.model_dump(mode="json"),
+            "entry_id": address.entry_id,
+            "entry_version_id": address.entry_version_id,
+        },
+        content=fragment.text,
+        truncated=False,
+        start=fragment.start,
+        end=fragment.end,
+    )
+
+
+def _render_selection(fragments: Sequence[PreparedContextFragment]) -> str:
+    return _render(tuple(_fragment_entry(fragment) for fragment in fragments))
+
+
+def _selection_bytes(fragments: Sequence[PreparedContextFragment]) -> int:
+    return len(_render_selection(fragments).encode("utf-8"))
+
+
+def _bytes_with(
+    selected: Sequence[PreparedContextFragment],
+    position: int,
+    fragment: PreparedContextFragment,
+) -> int:
+    """Measure the rendered selection with one fragment replaced in place."""
+
+    return _selection_bytes((*selected[:position], fragment, *selected[position + 1 :]))
+
+
+def _overlaps(spans: Sequence[tuple[int, int]], start: int, end: int) -> bool:
+    return any(start < span_end and span_start < end for span_start, span_end in spans)
 
 
 def _rendered_bytes(entries: Sequence[_PreparedContextEntry]) -> int:
