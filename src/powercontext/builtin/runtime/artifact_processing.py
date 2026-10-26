@@ -47,6 +47,7 @@ else:
     from multiprocessing.popen_spawn_posix import Popen as SpawnPopen
 
 from powercontext._logging import log_safely
+from powercontext.builtin.persistence.cursors import SourceCursorRepository
 from powercontext.builtin.persistence.database import AsyncDatabase
 from powercontext.builtin.persistence.errors import ArtifactProcessingLeadershipLostError
 from powercontext.builtin.persistence.processing_intents import ArtifactProcessingIntentRepository
@@ -57,7 +58,11 @@ from powercontext.builtin.persistence.supervision import (
     ArtifactProcessingLeaseRepository,
     database_utc_now,
 )
-from powercontext.builtin.persistence.tables import ARTIFACT_PROCESSING_INTENTS_TABLE, ARTIFACT_PROCESSING_LEASES_TABLE
+from powercontext.builtin.persistence.tables import (
+    ARTIFACT_PROCESSING_INTENTS_TABLE,
+    ARTIFACT_PROCESSING_LEASES_TABLE,
+    SOURCE_JOURNAL_HEADS_TABLE,
+)
 from powercontext.builtin.runtime.processing_contracts import (
     ArtifactProcessingWorkAssignment,
     ArtifactProcessingWorkerCompletion,
@@ -114,6 +119,9 @@ class ArtifactProcessingBinding:
     timezone: str = "Asia/Shanghai"
     config_prefix: str | None = None
     pending_provider: ArtifactProcessingPendingProvider | None = None
+    # A positive count admits one ordinary invocation without waiting for the
+    # time condition; None keeps the pre-existing schedule-only behavior.
+    source_count_threshold: int | None = None
     # Only automatic admission is filtered; already accepted requests retain
     # their own Worker authorization and domain completion semantics.
     automatic_scope_filter: Callable[[AsyncConnection, tuple[str, ...]], Awaitable[frozenset[str]]] | None = None
@@ -138,6 +146,12 @@ class ArtifactProcessingBinding:
                 raise ValueError("interval and cron cannot both be enabled")  # noqa: TRY003
         if self.cron is not None:
             CronTrigger.from_crontab(self.cron, timezone=ZoneInfo(self.timezone))
+        _require_optional_source_count_threshold(self.source_count_threshold)
+
+
+def _require_optional_source_count_threshold(value: int | None) -> None:
+    if value is not None and (type(value) is not int or value < 1):
+        raise ValueError("source_count_threshold must be a positive integer")  # noqa: TRY003
 
 
 class _WorkerResultSender(Protocol):
@@ -392,6 +406,7 @@ class _FamilyState:
     running: dict[str, _RunningWorker] = field(default_factory=dict)
     retries: dict[str, _RetryState] = field(default_factory=dict)
     requested_after: int = 0
+    count_after: int = 0
     scan_after: int = 0
     scan_generation: int = 0
     scan_in_progress: bool = False
@@ -650,12 +665,57 @@ class ArtifactProcessingSupervisor:
             state.reconcile_complete = True
         # Alternate discovery channels so explicit traffic cannot monopolize admission.
         state.automatic_next = not state.automatic_next
+        await self._discover_count(state)
         if state.automatic_next:
             await self._discover_automatic(state)
             await self._discover_requested(state)
         else:
             await self._discover_requested(state)
             await self._discover_automatic(state)
+
+    async def _discover_count(self, state: _FamilyState) -> None:
+        """Admit one ordinary invocation when a Scope has enough new journal entries."""
+
+        binding = state.binding
+        threshold = binding.source_count_threshold
+        if threshold is None or self._fresh_capacity(state) <= 0:
+            return
+        accepted = False
+        async with self._database.transaction() as connection:
+            await self._leases.require_fence(connection, self._require_current_fence())
+            rows = await self._intents.scan(
+                connection,
+                binding.binding_name,
+                after_sequence=state.count_after,
+                limit=_DISCOVERY_PAGE_SIZE,
+                dirty_only=True,
+            )
+            cursors = SourceCursorRepository()
+            for row in rows:
+                # An accepted invocation is already durable; retrying it belongs
+                # to the requested channel, not to a second count admission.
+                if row.requested_generation > row.handled_generation:
+                    continue
+                if row.scope_id in state.running or row.scope_id in state.queued or row.scope_id in state.retries:
+                    continue
+                cursor = await cursors.load(connection, row.scope_id, binding.binding_name)
+                position = 0 if cursor is None else cursor.cursor.sequence
+                head = await connection.scalar(
+                    select(SOURCE_JOURNAL_HEADS_TABLE.c.position).where(
+                        SOURCE_JOURNAL_HEADS_TABLE.c.scope_id == row.scope_id
+                    )
+                )
+                if int(head or 0) - position < threshold:
+                    continue
+                await self._intents.request(connection, row.scope_id, binding.binding_name)
+                accepted = True
+            if len(rows) == _DISCOVERY_PAGE_SIZE:
+                state.count_after = rows[-1].pending_sequence
+            else:
+                state.count_after = 0
+        if accepted:
+            state.requested_after = 0
+            state.discovery_pending = True
 
     async def _discover_requested(self, state: _FamilyState) -> None:
         capacity = self._fresh_capacity(state)
@@ -1057,7 +1117,7 @@ class ArtifactProcessingSupervisor:
             state.retry_queued.clear()
             state.overflow_not_before = 0.0
             state.retries.clear()
-            state.requested_after = state.scan_after = state.scan_generation = 0
+            state.requested_after = state.count_after = state.scan_after = state.scan_generation = 0
             state.scan_in_progress = False
             state.discovery_pending = True
 
@@ -1093,7 +1153,13 @@ class ArtifactProcessingSupervisor:
                 continue
             if state.next_schedule_at is not None:
                 deadlines.append(state.next_schedule_at)
-            if state.discovery_pending or state.scan_in_progress or not state.reconcile_complete or state.degraded:
+            if (
+                state.discovery_pending
+                or state.count_after
+                or state.scan_in_progress
+                or not state.reconcile_complete
+                or state.degraded
+            ):
                 deadlines.append(max(now, state.next_discovery_at))
         return None if not deadlines else max(0.001, min(deadlines) - now)
 

@@ -488,6 +488,7 @@ class ScopedSourceApplication:
                             span.set_attributes({_MEMORY_CAPTURE_SOURCE_COUNT: 1})
             except BaseValueConflictError as error:
                 raise SourceConflictError("identity", error.identity) from None
+            self._runtime._wake_processing()
             return SourceReceipt(
                 source_ref=SourceRef(source_type=record.source_type, source_id=record.source_id),
                 sequence=record.position,
@@ -504,6 +505,7 @@ class ScopedSourceApplication:
                 )
                 if span is not None:
                     span.set_attributes({_MEMORY_CAPTURE_SOURCE_COUNT: 1})
+            self._runtime._wake_processing()
             return SourceReceipt(source_ref=context.sources.catalog.as_ref(source), sequence=sequence)
 
 
@@ -531,11 +533,13 @@ class ScopedRecordApplication:
         /,
     ) -> SourceRecord:
         async with self._runtime._scope_operation(self.scope_id), self._runtime._locked(self.scope_id):
-            return await self._runtime._records().create_source(
+            result = await self._runtime._records().create_source(
                 self.scope_id,
                 source_type,
                 content,
             )
+        self._runtime._wake_processing()
+        return result
 
     async def get_source(self, source_type: str, source_id: str, /) -> SourceRecord:
         async with self._runtime._scope_operation(self.scope_id):
@@ -563,7 +567,9 @@ class ScopedRecordApplication:
         /,
     ) -> ArtifactCreated:
         async with self._runtime._scope_operation(self.scope_id), self._runtime._locked(self.scope_id):
-            return await self._runtime._records().create_artifact(self.scope_id, family, write)
+            result = await self._runtime._records().create_artifact(self.scope_id, family, write)
+        self._runtime._wake_processing()
+        return result
 
     async def get_artifact(self, family: str, artifact_id: str, /) -> ArtifactRecord:
         async with self._runtime._scope_operation(self.scope_id):
@@ -3427,6 +3433,12 @@ class BuiltinRuntime:
         if authorizer is not None:
             service.configure_authorization(lambda ref: authorizer(scope, ref), self._review_authorization_context)
         return service
+
+    def _wake_processing(self) -> None:
+        """Let the Supervisor re-check count admission after a new journal entry."""
+
+        if self.artifact_processing_supervisor is not None:
+            self.artifact_processing_supervisor.wake()
 
     def _records(self) -> RecordService:
         if self._record_service is None:
