@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime data
+data/
+deploy/data/
+logs/
+.env
+
+# Node
+node_modules/
+dist/
+!frontend/dist/
+!frontend/dist/**
+.vite/
+.tmp/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Qoder Sites local preview descriptor
+*.qoder.site
+
+# OS
+.DS_Store
+Thumbs.db
