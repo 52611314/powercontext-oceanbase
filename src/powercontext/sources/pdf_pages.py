@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, unquote
 
@@ -256,11 +257,15 @@ async def search_pdf_pages(
         if query in pair_queries:
             priority.extend(page_keys[:_PAIR_PRIORITY_HITS])
     ranked = sorted(scores, key=lambda page_key: (best_ranks[page_key], -scores[page_key], order[page_key]))
+    ordered = (*priority, *ranked)
+    target_document = _target_document(question, ordered, scores)
     selected: list[tuple[str, int]] = []
     selected_keys: set[tuple[str, int]] = set()
-    for page_key in (*priority, *ranked):
+    for page_key in ordered:
         if len(selected) >= limit:
             break
+        if target_document is not None and page_key[0] != target_document:
+            continue
         if page_key in selected_keys:
             continue
         selected.append(page_key)
@@ -428,6 +433,38 @@ def _page_key(source_id: str) -> tuple[str, int] | None:
     except ValueError:
         return None
     return unquote(document_id), page
+
+
+def _target_document(
+    question: str,
+    page_keys: tuple[tuple[str, int], ...],
+    scores: dict[tuple[str, int], float],
+) -> str | None:
+    documents = {page_key[0] for page_key in page_keys}
+    if not documents:
+        return None
+    question_key = re.sub(r"[^a-z0-9]", "", question.casefold())
+    matches = [
+        (len(company), _document_score(document, scores), document)
+        for document in documents
+        if (company := _company_key(document)) and company in question_key
+    ]
+    if matches:
+        return max(matches)[2]
+    return max(documents, key=lambda document: _document_score(document, scores))
+
+
+def _company_key(document_id: str) -> str:
+    parts: list[str] = []
+    for part in document_id.split("_"):
+        if re.match(r"^\d{4}", part) or part.upper() in {"10K", "10Q", "8K", "EARNINGS", "ANNUAL"}:
+            break
+        parts.append(part)
+    return re.sub(r"[^a-z0-9]", "", "".join(parts).casefold())
+
+
+def _document_score(document_id: str, scores: dict[tuple[str, int], float]) -> float:
+    return sum(score for (document, _page), score in scores.items() if document == document_id)
 
 
 __all__ = [
