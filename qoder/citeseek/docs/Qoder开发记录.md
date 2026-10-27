@@ -1,8 +1,8 @@
 # Qoder 开发记录
 
-> 本文件记录 Qoder 在 CiteSeek 开发中的实际工作。Qoder 对话截图、录屏与账号 UID 由参赛者补充。
+> 本文件记录 Qoder 在 CiteSeek 开发中的实际工作。Qoder 账号 UID、9 张阶段截图与 11.5 秒计划录屏均已归档。
 > 项目：CiteSeek（文献与资料检索工作台）
-> 分支：`2026-competition-ecosystem`，目录：`qoder/citeseek/`
+> 分支：`2026-competition-ecosystem`，目录：`qoder/citeseek/`；素材目录：`qoder/开发记录/`
 
 ## 1. 账号与素材
 
@@ -10,9 +10,9 @@
 | --- | --- |
 | Qoder 账号 UID | `01a17892-0f36-79b6-83d6-40e5d75abc8c` |
 | 项目网站 | <https://citeseek-ma9lrveqlz1.qoder.zone>（Qoder Sites，已公开） |
+| Qoder 阶段截图 | `../../开发记录/p0.png` … `p5-2.png`，共 9 张，覆盖 P0–P5 |
+| 计划录屏 | `../../开发记录/预开发.mp4`（11.5 秒，需求拆解与实施计划） |
 | 产品截图 | `site/assets/` 下的 `library`、`search`、`evidence`、`reader`、`ask` 五张 WebP，均为运行中应用的实拍 |
-| Qoder 对话截图 | 建议放在 `qoder/开发记录/`，命名 `01-需求拆解.png` … `08-站点发布.png` |
-| 录屏 | 建议 2–3 分钟，覆盖上传、检索、问答、引用跳转、证据抽屉 |
 
 ## 2. 开发时间线
 
@@ -40,18 +40,33 @@
 
 - 每次验收脚本的输出（`OK`）与 `docs/evidence/*.json`
 - `data/logs/retrieval.jsonl` 中的逐次检索记录
-- Git 提交：`aa78ece0`（移除旧脚手架）、`17ddfb60`（CiteSeek 实现与站点），已推送 `origin/2026-competition-ecosystem`
-- 建议截图清单：
-  1. 需求拆解与方案讨论（Qoder 对话，待补）
-  2. P0 探针 EXPLAIN 输出（`docs/evidence/search-evidence.json` 可复现）
-  3. 资料库导入完成（`site/assets/library.webp`）
-  4. 混合检索结果与证据抽屉（`site/assets/search.webp`、`evidence.webp`）
-  5. 问答引用跳转（`site/assets/ask.webp`、`reader.webp`）
-  6. 前端构建与 Docker 启动（终端记录，待补）
-  7. 评测报告（`docs/检索评测.md`）
-  8. Qoder Sites 发布成功页（<https://citeseek-ma9lrveqlz1.qoder.zone>）
+- Git 提交：`aa78ece0`（移除旧脚手架）、`17ddfb60`（CiteSeek 实现与站点）、`dd656ab7`（站点地址与验收状态），均已推送 `origin/2026-competition-ecosystem`
+- 阶段截图与录屏对应关系：
+  1. 需求拆解与实施计划（`../../开发记录/预开发.mp4`）
+  2. P0 探针与 EXPLAIN（`../../开发记录/p0.png`；`docs/evidence/search-evidence.json` 可复现）
+  3. 资料库导入完成（`../../开发记录/p1.png`、`site/assets/library.webp`）
+  4. 混合检索与证据面板（`../../开发记录/p2.png`、`site/assets/search.webp`、`evidence.webp`）
+  5. 出处、问答与导出（`../../开发记录/p3.png`、`site/assets/ask.webp`、`reader.webp`）
+  6. 前端页面与 Docker 构建（`../../开发记录/p4-1.png` … `p4-3.png`）
+  7. 评测报告（`../../开发记录/p5-1.png`、`docs/检索评测.md`）
+  8. Qoder Sites 发布（`../../开发记录/p5-2.png`、<https://citeseek-ma9lrveqlz1.qoder.zone>）
 
 ## 5. 说明
 
 - 项目主要开发工作在 Qoder 桌面版中完成；本记录中的阶段与实际代码、脚本、测试一一对应。
 - 未使用其他 AI 工具生成业务代码；第三方开源库与模型来源见 README 与 `docs/技术证据.md`。
+
+## 6. 开发记录素材清单
+
+| 文件 | 阶段 | 内容 |
+| --- | --- | --- |
+| [`预开发.mp4`](../../开发记录/预开发.mp4) | 启动前 | 需求拆解与实施计划录屏，11.5 秒 |
+| [`p0.png`](../../开发记录/p0.png) | P0 | seekdb 探针、建表、单 SQL 双通道、EXPLAIN 与嵌入结果 |
+| [`p1.png`](../../开发记录/p1.png) | P1 | 资料库导入、切块、索引、去重、进度与 Docker 验证 |
+| [`p2.png`](../../开发记录/p2.png) | P2 | 混合检索三种模式、RRF、筛选、证据接口与实测延迟 |
+| [`p3.png`](../../开发记录/p3.png) | P3 | 出处溯源、抽取式问答、引用偏移校验与导出 |
+| [`p4-1.png`](../../开发记录/p4-1.png) | P4 | 前端检索页、原文抽屉与浏览器实测 |
+| [`p4-2.png`](../../开发记录/p4-2.png) | P4 | 带引用问答页面与证据修复记录 |
+| [`p4-3.png`](../../开发记录/p4-3.png) | P4 | 前端交付页面清单与阶段总结 |
+| [`p5-1.png`](../../开发记录/p5-1.png) | P5 | 评测集、站点搭建与真实截图采集过程 |
+| [`p5-2.png`](../../开发记录/p5-2.png) | P5 | P5 验收结果、发布前预览与待确认事项 |
