@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import re
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, unquote
 
@@ -36,66 +35,7 @@ PDF_PAGE_SOURCE_NAME = "pdf-page"
 PDF_PAGE_SOURCE_VERSION = "1"
 
 _IDENTITY_PREFIX = "pdf:"
-_MAX_KEYWORD_TERMS = 12
-_MAX_TERM_QUERIES = 10
-_RRF_K = 60
-_MIN_SCORED_HITS = 24
-
-_TERM_EXPANSIONS: dict[str, tuple[str, ...]] = {
-    "geographies": ("geography", "geographic", "geographical", "countries", "markets", "regions"),
-    "geography": ("geographic", "geographical"),
-    "operates": ("operate", "operating", "operations"),
-    "legal": ("litigation", "proceedings"),
-    "battles": ("litigation", "proceedings", "claims"),
-    "capex": ("capital", "expenditures"),
-    "d": ("depreciation",),
-    "a": ("amortization",),
-}
-
-_FOCUS_TERMS = frozenset({
-    "amortization",
-    "battles",
-    "capex",
-    "cash",
-    "costs",
-    "countries",
-    "depreciation",
-    "ebitda",
-    "flow",
-    "flows",
-    "geographies",
-    "income",
-    "legal",
-    "litigation",
-    "margin",
-    "markets",
-    "operating",
-    "operates",
-    "proceedings",
-    "regions",
-    "restructuring",
-    "revenue",
-    "sales",
-    "statement",
-    "statements",
-})
-
-_MAX_PAIR_QUERIES = 4
-_PAIR_PRIORITY_HITS = 6
-_PAIR_TEMPLATES: tuple[tuple[str, str], ...] = (
-    ("operating", "income"),
-    ("income", "statement"),
-    ("depreciation", "amortization"),
-    ("cash", "flow"),
-    ("operating", "cash"),
-    ("capital", "expenditures"),
-    ("operating", "countries"),
-    ("countries", "markets"),
-    ("operating", "markets"),
-    ("restructuring", "costs"),
-    ("legal", "proceedings"),
-    ("litigation", "proceedings"),
-)
+_HASHED_IDENTITY_PREFIX = "pdfh:"
 
 
 class PDFDocumentInput(BaseModel):
@@ -162,7 +102,10 @@ def pdf_page_source_id(document_id: str, document_sha256: str, page_number: int)
         raise ValueError("page_number must be a positive integer")  # noqa: TRY003
     identity = f"{_IDENTITY_PREFIX}{quote(document_id, safe='')}:{document_sha256}:{page_number}"
     if len(identity) > MAX_SOURCE_ID_LENGTH:
-        raise ValueError(f"PDF page identity must not exceed {MAX_SOURCE_ID_LENGTH} characters")  # noqa: TRY003
+        document_key = hashlib.sha256(document_id.encode("utf-8")).hexdigest()
+        identity = f"{_HASHED_IDENTITY_PREFIX}{document_key}:{document_sha256}:{page_number}"
+    if len(identity) > MAX_SOURCE_ID_LENGTH:
+        raise ValueError("PDF page number exceeds the supported identity length")  # noqa: TRY003
     return identity
 
 
@@ -236,177 +179,28 @@ async def search_pdf_pages(
         return ()
     if not isinstance(question, str) or not question.strip():
         return ()
-    request_limit = max(limit * 2, 40)
-    scored_hits = max(limit, _MIN_SCORED_HITS)
-    scores: dict[tuple[str, int], float] = {}
-    best_ranks: dict[tuple[str, int], int] = {}
-    citations_by_page: dict[tuple[str, int], Any] = {}
-    order: dict[tuple[str, int], int] = {}
-    priority: list[tuple[str, int]] = []
-    pair_queries = set(_pair_queries(_available_terms(question)))
-    for query in _search_queries(question):
-        page = await memory.search(SearchMemoryRequest(query=query, mode="fts", limit=request_limit))
-        page_keys = await _score_page_hits(
-            memory,
-            page.hits[:scored_hits],
-            scores,
-            best_ranks,
-            citations_by_page,
-            order,
-        )
-        if query in pair_queries:
-            priority.extend(page_keys[:_PAIR_PRIORITY_HITS])
-    ranked = sorted(scores, key=lambda page_key: (best_ranks[page_key], -scores[page_key], order[page_key]))
-    ordered = (*priority, *ranked)
-    target_document = _target_document(question, ordered, scores)
-    selected: list[tuple[str, int]] = []
-    selected_keys: set[tuple[str, int]] = set()
-    for page_key in ordered:
-        if len(selected) >= limit:
-            break
-        if target_document is not None and page_key[0] != target_document:
+    from powercontext.sources._pdf_retrieval import rank_pages
+
+    # Search and enumerate only the caller's active scoped Memory. Enumeration is
+    # essential: a global top-k lexical pool can omit an entire document's pages.
+    hits = await memory.search(SearchMemoryRequest(query=question, mode="fts", limit=max(80, limit * 4)))
+    records = (await memory.list()).entries
+    candidates = []
+    for record in records:
+        sources = tuple(source for source in record.entry.sources if source.source_type == PDF_PAGE_SOURCE_NAME)
+        if record.state != "active" or len(sources) != 1:
             continue
-        if page_key in selected_keys:
-            continue
-        selected.append(page_key)
-        selected_keys.add(page_key)
-    return tuple(citations_by_page[page_key] for page_key in selected)
-
-
-async def _score_page_hits(
-    memory: Any,
-    hits: Any,
-    scores: dict[tuple[str, int], float],
-    best_ranks: dict[tuple[str, int], int],
-    citations_by_page: dict[tuple[str, int], Any],
-    order: dict[tuple[str, int], int],
-) -> list[tuple[str, int]]:
-    from powercontext.builtin.artifacts.memory.models import MemoryCitation
-    from powercontext.builtin.runtime import GetMemoryEntryRequest
-
-    page_keys: list[tuple[str, int]] = []
-    for rank, hit in enumerate(hits):
-        citation = MemoryCitation(
-            memory_ref=hit.memory_ref,
-            entry_id=hit.entry_id,
-            entry_version_id=hit.entry_version_id,
-        )
-        entry = (await memory.get(GetMemoryEntryRequest(citation=citation))).entry
-        page_sources = tuple(source for source in entry.sources if source.source_type == PDF_PAGE_SOURCE_NAME)
-        if len(page_sources) != 1:
-            continue
-        page_key = _page_key(page_sources[0].source_id)
-        if page_key is None:
-            continue
-        scores[page_key] = scores.get(page_key, 0.0) + 1.0 / (_RRF_K + rank)
-        best_ranks[page_key] = min(best_ranks.get(page_key, rank), rank)
-        citations_by_page.setdefault(page_key, citation)
-        order.setdefault(page_key, len(order))
-        page_keys.append(page_key)
-    return page_keys
-
-
-def _search_queries(question: str) -> tuple[str, ...]:
-    terms = _available_terms(question)
-    queries = [question.strip()]
-    core_terms = tuple(term for term in terms if len(term) >= 2)[:_MAX_KEYWORD_TERMS]
-    if core_terms:
-        queries.append(" ".join(core_terms))
-    queries.extend(_term_queries(terms))
-    queries.extend(_pair_queries(terms))
-    return _dedupe_queries(queries)
-
-
-def _available_terms(question: str) -> tuple[str, ...]:
-    terms = list(_distinct_terms(question))
-    lowered = question.casefold()
-    for marker, additions in (
-        ("d&a", ("depreciation", "amortization")),
-        ("geograph", ("countries", "markets")),
-        ("legal", ("litigation", "proceedings")),
-        ("litigation", ("proceedings",)),
-    ):
-        if marker not in lowered:
-            continue
-        for term in additions:
-            if term not in terms:
-                terms.append(term)
-    for term in tuple(terms):
-        for expansion in _TERM_EXPANSIONS.get(term, ()):
-            if expansion not in terms:
-                terms.append(expansion)
-    return tuple(terms)
-
-
-def _pair_queries(terms: tuple[str, ...]) -> tuple[str, ...]:
-    available = set(terms)
-    queries: list[str] = []
-    for left, right in _PAIR_TEMPLATES:
-        if left in available and right in available:
-            queries.append(f"{left} {right}")
-        if len(queries) >= _MAX_PAIR_QUERIES:
-            break
-    return tuple(queries)
-
-
-def _distinct_terms(question: str) -> tuple[str, ...]:
-    from powercontext.builtin.artifacts.search import analyze_fts_query
-
-    try:
-        analyzed = analyze_fts_query(question)
-    except (TypeError, ValueError):
-        return ()
-    return tuple(dict.fromkeys(analyzed.split()))
-
-
-def _term_queries(terms: tuple[str, ...]) -> tuple[str, ...]:
-    candidates: list[str] = []
-    expanded_terms = tuple(term for term in terms if term in _TERM_EXPANSIONS)
-    focused_terms = tuple(term for term in terms if term in _FOCUS_TERMS and term not in _TERM_EXPANSIONS)
-    other_terms = tuple(
-        term for term in terms if term not in _TERM_EXPANSIONS and term not in _FOCUS_TERMS and len(term) >= 5
-    )
-    for term in (*expanded_terms, *focused_terms, *other_terms):
-        variants = (*_TERM_EXPANSIONS.get(term, ()), *_stem_forms(term))
-        if len(term) >= 2:
-            candidates.append(term)
-        candidates.extend(variant for variant in variants if variant != term)
-        if len(candidates) >= _MAX_TERM_QUERIES:
-            break
-    return tuple(candidates[:_MAX_TERM_QUERIES])
-
-
-def _stem_forms(term: str) -> tuple[str, ...]:
-    if term.endswith("ies") and len(term) > 4:
-        return (term[:-3] + "y",)
-    if term.endswith("es") and len(term) > 4:
-        return (term[:-2],)
-    if term.endswith("s") and len(term) > 3:
-        return (term[:-1],)
-    return ()
-
-
-def _dedupe_queries(queries: list[str]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    unique: list[str] = []
-    for query in queries:
-        normalized = query.strip()
-        key = normalized.casefold()
-        if not normalized or key in seen:
-            continue
-        seen.add(key)
-        unique.append(normalized)
-    return tuple(unique)
+        identity = _page_identity(sources[0].source_id)
+        if identity is not None:
+            candidates.append((identity, record.entry.text, record.citation))
+    return rank_pages(candidates, question, limit, hits.hits)
 
 
 def _extract_page_texts(content: bytes) -> tuple[str, ...]:
     try:
         reader = PdfReader(io.BytesIO(content))
-    except Exception as error:
-        raise ValueError("PDF content cannot be parsed") from error  # noqa: TRY003
-    if reader.is_encrypted and not reader.decrypt(""):
-        raise ValueError("PDF requires a user password")  # noqa: TRY003
-    try:
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ValueError("PDF requires a user password")  # noqa: TRY003, TRY301
         pages = tuple(reader.pages)
         return tuple(page.extract_text() or "" for page in pages)
     except Exception as error:
@@ -423,48 +217,30 @@ def _is_sha256(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
-def _page_key(source_id: str) -> tuple[str, int] | None:
-    if not source_id.startswith(_IDENTITY_PREFIX):
+def _page_identity(source_id: str) -> tuple[str, str, int] | None:
+    hashed = source_id.startswith(_HASHED_IDENTITY_PREFIX)
+    prefix = _HASHED_IDENTITY_PREFIX if hashed else _IDENTITY_PREFIX
+    if not source_id.startswith(prefix):
         return None
-    rest = source_id[len(_IDENTITY_PREFIX) :]
     try:
-        document_id, _digest, page_number = rest.split(":", 2)
+        document_id, digest, page_number = source_id[len(prefix) :].split(":", 2)
         page = int(page_number)
     except ValueError:
         return None
-    return unquote(document_id), page
-
-
-def _target_document(
-    question: str,
-    page_keys: tuple[tuple[str, int], ...],
-    scores: dict[tuple[str, int], float],
-) -> str | None:
-    documents = {page_key[0] for page_key in page_keys}
-    if not documents:
+    if not document_id or not _is_sha256(digest) or page < 1:
         return None
-    question_key = re.sub(r"[^a-z0-9]", "", question.casefold())
-    matches = [
-        (len(company), _document_score(document, scores), document)
-        for document in documents
-        if (company := _company_key(document)) and company in question_key
-    ]
-    if matches:
-        return max(matches)[2]
-    return max(documents, key=lambda document: _document_score(document, scores))
+    if hashed:
+        if not _is_sha256(document_id):
+            return None
+        # Keep the hashed namespace distinct from arbitrary user document IDs.
+        # The original document ID remains in the captured Source/projection.
+        return f"sha256:{document_id}", f"h:{digest}", page
+    return unquote(document_id), digest, page
 
 
-def _company_key(document_id: str) -> str:
-    parts: list[str] = []
-    for part in document_id.split("_"):
-        if re.match(r"^\d{4}", part) or part.upper() in {"10K", "10Q", "8K", "EARNINGS", "ANNUAL"}:
-            break
-        parts.append(part)
-    return re.sub(r"[^a-z0-9]", "", "".join(parts).casefold())
-
-
-def _document_score(document_id: str, scores: dict[tuple[str, int], float]) -> float:
-    return sum(score for (document, _page), score in scores.items() if document == document_id)
+def _page_key(source_id: str) -> tuple[str, int] | None:
+    identity = _page_identity(source_id)
+    return None if identity is None else (identity[0], identity[2])
 
 
 __all__ = [
