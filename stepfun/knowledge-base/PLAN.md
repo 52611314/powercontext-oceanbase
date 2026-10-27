@@ -96,4 +96,7 @@ BFF 只做协议转换与参数校验，不参与排序；检索排序完全由 
   - 生产模式：`server/index.mjs` 增加 `dist/` 静态托管与 SPA 回退；`npm run build && npm start` 单端口 8787 验证页面/API/模型文件均 200。
   - 文档：`README.md`（启动、模型、基准、目录、验证记录）、`docs/技术说明.md`（模型与量化、端侧运行、seekdb 使用、状态与优化）、`docs/benchmark.md`（条件、复现、局限）、`docker-compose.yml`、`.env.example`、`.gitignore`。
   - 清理：删除临时诊断脚本 `scripts/diag-edge.mjs`。
-- 待办：阶段 8 提交推送。
+- 2026-10-27 14:20 阶段 8 完成。
+  - 提交 `9fbc5cb0f25bc9f1435254ee8a88ffbd33b1e922`（`feat(stepfun): 实现端侧向量化与 seekdb 混合检索迷你知识库`）已推送到 `52611314/powercontext-oceanbase` 的 `2026-competition-ecosystem` 分支，`git ls-remote` 核对一致，工作区无未提交改动。
+  - 推送需经本机 SOCKS5（`git -c http.proxy=socks5h://127.0.0.1:1080`），直连 GitHub 443 会被重置；GitHub 对 90.46MB 的 `model.onnx` 给出 >50MB 警告，未触及 100MB 硬限制。
+- 项目完成。环境遗留：容器 `seekdb-kb`（127.0.0.1:2881）与 `.build-env/seekdb-kb-runtime` 副本（1.24GB）、`.build-env/kb-venv`、npm/pip 缓存，均为开发环境，可按需保留或清理。
