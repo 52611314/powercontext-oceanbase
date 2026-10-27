@@ -1,0 +1,25 @@
+{
+  "browser": "Edg/156.0.4314.42",
+  "steps": [],
+  "ok": true,
+  "badge": "WebGPU · FP16",
+  "importTiming": "1 | 130 ms | 74 ms | 636 ms | 850 ms",
+  "searchA": {
+    "firstResult": "#1score 0.0328DOC-A · chunk 0删除seekdb 是 OceanBase 推出的 AI 原生搜索数据库，支持向量索引与全文索引。\nHNSW 是近似最近邻算法，通过分层图结构加速向量检索，适合大规模语料。\n全文索引使用 IK 分词器，对中文查询友好，可以精确匹配专有名词和数字。\n索引刷新采用异步",
+    "count": 1
+  },
+  "searchB": {
+    "metas": [
+      "DOC-B · chunk 0"
+    ]
+  },
+  "isolationB": true,
+  "searchA2": {
+    "metas": [
+      "DOC-A · chunk 0"
+    ]
+  },
+  "isolationA": true,
+  "deleted": true,
+  "events": []
+}

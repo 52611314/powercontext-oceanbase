@@ -1,0 +1,29 @@
+{
+  "url": "http://127.0.0.1:5173/",
+  "mode": "headless",
+  "browser": "Edg/156.0.4314.42",
+  "steps": [
+    {
+      "step": "webgpu-detect",
+      "gpu": {
+        "available": true,
+        "info": {}
+      }
+    }
+  ],
+  "webgpu": {
+    "available": true,
+    "info": {}
+  },
+  "backendBadge": "WebGPU · FP16",
+  "backendDetail": [
+    "推理后端：webgpu（fp16）",
+    "选择原因：WebGPU 可用",
+    "加载耗时：593 ms"
+  ],
+  "fallbackNotice": null,
+  "vectorText": "维度 512 · 耗时 163 ms · 与示例文档余弦 0.5549",
+  "compareText": "余弦 0.966584 · FP32 44 ms · INT8 40 ms",
+  "log": "12:23:44 模型就绪: webgpu/fp16, 加载 593ms\n12:23:44 查询向量 512 维，推理 129ms，与示例文档余弦 0.5549\n12:23:45 量化对比: FP32 44ms / INT8 40ms，句向量余弦 0.966584",
+  "ok": true
+}

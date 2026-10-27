@@ -1,0 +1,45 @@
+{
+  "model": "bge-small-zh-v1.5",
+  "source": "https://huggingface.co/Xenova/bge-small-zh-v1.5 (Transformers.js 格式，源自 BAAI/bge-small-zh-v1.5)",
+  "dimension": 512,
+  "files": {
+    "fp32": {
+      "path": "onnx/model.onnx",
+      "bytes": 94851877,
+      "mib": 90.46
+    },
+    "fp16": {
+      "path": "onnx/model_fp16.onnx",
+      "bytes": 47497427,
+      "mib": 45.3,
+      "method": "官方 FP16 ONNX（自转换版本在 Cast 节点产生类型不匹配，未采用）"
+    },
+    "int8": {
+      "path": "onnx/model_quantized.onnx",
+      "bytes": 23919084,
+      "mib": 22.81,
+      "method": "onnxruntime.quantization.quantize_dynamic(weight_type=QInt8)，耗时 1.8s",
+      "rename_note": "由自量化产物 model_int8_self.onnx 重命名，匹配 Transformers.js dtype=q8 的默认文件名"
+    }
+  },
+  "compression_ratio": {
+    "fp16": 2.0,
+    "int8": 3.97
+  },
+  "cosine_similarity_vs_fp32": {
+    "int8": [
+      0.955887,
+      0.958712
+    ],
+    "fp16": "未在 CPU EP 验证（onnxruntime CPU 不支持 fp16 算子），留待 WebGPU 浏览器端验证"
+  },
+  "verification": {
+    "tokenizer": "tokenizer.json 来自同一 Xenova 仓库",
+    "input": "固定随机 input_ids/attention_mask/token_type_ids (2x16)",
+    "metric": "最后一层 hidden state 均值池化后的句向量余弦"
+  },
+  "environment": {
+    "python": "D:\\oceanbase\\.build-env\\kb-venv (Python 3.13 / onnx 1.23.2 / onnxruntime 1.31.1 / numpy 2.5.4)",
+    "sandbox": "量化需 danger-full-access（onnx 写外部数据张量与临时文件重命名在 workspace-write 下被拒绝）"
+  }
+}

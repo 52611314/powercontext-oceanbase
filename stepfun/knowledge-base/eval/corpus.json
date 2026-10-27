@@ -1,0 +1,102 @@
+[
+  {
+    "id": "doc-01",
+    "title": "HNSW 向量索引原理",
+    "text": "HNSW（Hierarchical Navigable Small World）是一种基于分层图的近似最近邻索引。它把向量组织成多层图，上层稀疏、下层稠密，查询时从顶层入口点开始贪心下降，在每层找到局部最近邻后再进入下一层，从而把搜索复杂度从线性降到近似对数级。seekdb 的向量索引默认使用 HNSW（lib=vsag），建索引时写入图结构，查询时通过 ef_search 控制候选队列大小。"
+  },
+  {
+    "id": "doc-02",
+    "title": "HNSW 参数调优",
+    "text": "m 控制每个节点的最大出边数，越大召回越高但内存和构建时间增加；ef_construction 是建索引时的候选队列大小，影响图质量；ef_search 是查询时的候选队列大小，直接权衡召回与延迟。经验值是 m=16 到 32、ef_construction=200、ef_search=64 到 200。调整 ef_search 不需要重建索引，适合线上按延迟预算动态调整。"
+  },
+  {
+    "id": "doc-03",
+    "title": "全文索引与 IK 分词",
+    "text": "全文索引把文档切分成词项并建立倒排表。中文没有空格，需要分词器。IK 分词器支持 smart 和 max_word 两种模式：smart 模式做最细粒度切分并组合出所有可能词，适合召回；max_word 只输出最长词，适合精确匹配。seekdb 创建全文索引时通过 fulltextConfig 指定 analyzer 为 ik，查询用 MATCH AGAINST 语法，按 BM25 打分。"
+  },
+  {
+    "id": "doc-04",
+    "title": "混合检索与 RRF 融合",
+    "text": "混合检索同时执行全文检索与向量检索，再用 RRF（Reciprocal Rank Fusion）融合。RRF 不依赖两路分数的量纲，只看排名：score 等于两路 1/(k+rank) 之和，k 通常取 60。这样关键词命中的文档和语义相近的文档都能进入最终结果，比单路检索更稳。seekdb 通过 DBMS_HYBRID_SEARCH 在库内完成两路召回和融合，客户端只收到融合后的结果。"
+  },
+  {
+    "id": "doc-05",
+    "title": "DBMS_HYBRID_SEARCH 系统包",
+    "text": "DBMS_HYBRID_SEARCH 是 seekdb 的系统包，SEARCH 方法接收表名和 JSON 参数，内部生成一条包含 MATCH AGAINST 与 cosine_distance 的 SQL，用 full join 合并两路候选并按 RRF 打分排序。GET_SQL 可以返回实际执行的 SQL，便于排查。参数里 query 描述全文条件，knn 描述向量条件，rank 配置 rrf 的 rank_window_size 与 rank_constant。"
+  },
+  {
+    "id": "doc-06",
+    "title": "索引异步刷新",
+    "text": "seekdb 1.3 起 HNSW 索引默认异步维护，写入后新数据不会立刻出现在近似检索结果里。调用 collection.refresh_index()（对应 SQL CALL dbms_index_manager.refresh()）可以把已提交的写入推进到索引可见状态。批量导入时应该在每批写入后刷新一次，而不是每条都刷新，否则刷新开销会主导导入时间。"
+  },
+  {
+    "id": "doc-07",
+    "title": "集合与元数据",
+    "text": "seekdb 的 collection 对应一张表，包含 id、document、embedding、metadata 等列。metadata 支持字符串、数字、布尔值，可用于过滤。创建 collection 时可以指定向量维度、距离度量（l2、cosine、inner_product）和全文分词器。关闭 embeddingFunction 后，向量必须由调用方显式传入，这正是端侧推理场景需要的模式。"
+  },
+  {
+    "id": "doc-08",
+    "title": "向量维度与距离度量",
+    "text": "向量维度必须与模型输出一致，bge-small-zh-v1.5 输出 512 维，all-MiniLM-L6-v2 输出 384 维。距离度量要与模型训练时一致：bge 系列使用余弦相似度，写入前应做归一化。seekdb 的 cosine_distance 返回 1 减余弦相似度，越小越相似；而 RRF 融合后的 _score 越大越相关，两者含义相反，展示时要区分。"
+  },
+  {
+    "id": "doc-09",
+    "title": "Transformers.js 端侧推理",
+    "text": "Transformers.js 让浏览器直接运行 Hugging Face 的 ONNX 模型。它提供 pipeline API，feature-extraction 任务可以输出句向量；通过 device 参数选择 webgpu 或 wasm 后端，通过 dtype 选择 fp32、fp16、q8 等精度。模型文件可以放在本地目录，设置 env.localModelPath 与 env.allowRemoteModels 为 false 后完全离线加载。"
+  },
+  {
+    "id": "doc-10",
+    "title": "WebGPU 推理后端",
+    "text": "WebGPU 是浏览器的新一代图形与计算 API，在 Windows 上 Chrome 与 Edge 都已默认启用。ONNX Runtime Web 的 WebGPU 后端把矩阵乘等算子编译成 WGSL 着色器，适合 fp16 推理。首次运行需要编译着色器，会有明显预热开销；之后单条文本的推理可以降到几十毫秒。用 navigator.gpu.requestAdapter() 可以检测可用性。"
+  },
+  {
+    "id": "doc-11",
+    "title": "WASM 自动降级",
+    "text": "当浏览器不支持 WebGPU、驱动在黑名单或用户禁用硬件加速时，navigator.gpu 不存在或 requestAdapter 返回 null。此时应自动切换到 WASM 后端并提示用户。WASM 后端兼容性最好，但吞吐低于 WebGPU；INT8 量化模型在 WASM 上通常比 FP32 快 2 到 4 倍，适合作为降级路径的默认精度。"
+  },
+  {
+    "id": "doc-12",
+    "title": "INT8 动态量化",
+    "text": "动态 INT8 量化把权重从 FP32 转成 INT8，推理时按需反量化，不需要校准数据集。它能把模型体积压到约四分之一，CPU 上速度提升明显，代价是少量精度损失。对 embedding 模型，量化误差会体现在句向量的方向上，评测时要用 Recall@10 等指标确认检索质量没有明显下降，而不能只看单条向量的余弦。"
+  },
+  {
+    "id": "doc-13",
+    "title": "FP16 半精度",
+    "text": "FP16 用 16 位浮点表示权重与激活，体积是 FP32 的一半，数值范围较小但精度足够。WebGPU 对 FP16 有原生支持，推理速度通常快于 FP32。FP16 转换需要把模型中的常量与算子类型一并转换，某些 Cast 节点需要特殊处理；官方发布的 FP16 ONNX 文件通常已经处理好这些细节。"
+  },
+  {
+    "id": "doc-14",
+    "title": "bge 中文模型用法",
+    "text": "bge-small-zh-v1.5 是 BAAI 发布的中文 embedding 模型，输出 512 维向量，适合端侧部署。查询侧需要加指令前缀“为这个句子生成表示以用于检索相关文章：”，文档侧不加，否则查询与文档的向量空间会偏移。它的训练目标是余弦相似度，输入长度上限 512 token，长文档需要先分块。"
+  },
+  {
+    "id": "doc-15",
+    "title": "文档分块策略",
+    "text": "长文档要切成小块再向量化，块太大超出模型输入长度会被截断，块太小会丢失上下文。常用做法是按 300 到 500 字切分，相邻块保留 50 字左右重叠，避免句子被切断。切分时要注意 UTF-8 边界与代理对，不能把中文或 emoji 截成半个字符。每个块保存标题、块序号和来源，便于结果展示与溯源。"
+  },
+  {
+    "id": "doc-16",
+    "title": "批量向量化与批大小",
+    "text": "批量推理比逐条推理吞吐高得多，因为 GPU 与 WASM 都能并行处理一个 batch。批大小要按后端调整：WebGPU 显存有限，8 到 16 比较稳；WASM 内存与线程受限，4 到 8 更合适。批太大反而会因为内存分配和填充而变慢。导入时应该按批调用并显示进度，让用户知道还要多久。"
+  },
+  {
+    "id": "doc-17",
+    "title": "端到端延迟分解",
+    "text": "端到端查询延迟由几段组成：查询向量化、网络往返、seekdb 混合检索、结果渲染。端侧推理场景里网络往返可以忽略，因为服务在本地；查询向量化通常占大头，几十毫秒；seekdb 检索在几毫秒到几十毫秒。优化时要分段计时，先找瓶颈再动手，不能只看总时间。"
+  },
+  {
+    "id": "doc-18",
+    "title": "检索质量指标",
+    "text": "Recall@K 衡量前 K 个结果里覆盖了多少相关文档，nDCG@K 进一步考虑排序位置，MRR@10 只看第一个相关结果的位置。评测需要固定的语料、查询集和相关标注 qrels。对比量化前后时要保持语料、查询、后端、批大小一致，重复多次取中位数，不能只报最快一次。"
+  },
+  {
+    "id": "doc-19",
+    "title": "模型缓存与加载",
+    "text": "模型文件体积大，重复下载会拖慢首屏。可以用 Cache Storage 或浏览器 HTTP 缓存把 ONNX 与分词文件缓存起来，第二次加载直接从磁盘读取。注意模型版本变化时要失效旧缓存。加载进度回调可以显示已下载字节数与百分比，避免用户以为页面卡死。"
+  },
+  {
+    "id": "doc-20",
+    "title": "增量导入与状态一致性",
+    "text": "增量导入指在已有知识库上继续添加文档，而不是重建整个库。关键是保证新文档在刷新后立即可检索，且不影响已有数据。切换知识库时要清空上一次的检索结果，避免把 A 库的结果显示在 B 库下。删除文档后同样要刷新索引，并确认它不再出现在检索结果里。"
+  }
+]

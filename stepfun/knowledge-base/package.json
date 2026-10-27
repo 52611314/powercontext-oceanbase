@@ -1,0 +1,42 @@
+{
+  "name": "seekdb-mini-kb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "端侧 AI 推理 + seekdb 混合检索迷你知识库",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.mjs",
+    "bff": "node server/index.mjs",
+    "phase0": "node scripts/phase0-verify.mjs",
+    "test:bff": "node scripts/phase2-smoke.mjs",
+    "test:e2e": "node scripts/e2e-check.mjs --headless",
+    "test:browser": "node scripts/browser-check.mjs --headless",
+    "download:model": "node scripts/download-model.mjs",
+    "bench:q8": "node scripts/benchmark.mjs --dtype=q8 --prefer=wasm",
+    "bench:fp16": "node scripts/benchmark.mjs --dtype=fp16 --prefer=auto",
+    "bench:fp32": "node scripts/benchmark.mjs --dtype=fp32 --prefer=wasm",
+    "bench:summary": "node scripts/summarize-benchmark.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
+    "express": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "seekdb": "^1.4.0",
+    "socks-proxy-agent": "^10.1.0",
+    "undici": "^8.12.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

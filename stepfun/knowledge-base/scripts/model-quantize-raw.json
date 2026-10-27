@@ -1,0 +1,17 @@
+{
+  "source": "D:\\oceanbase\\powercontext-oceanbase\\stepfun\\knowledge-base\\public\\models\\bge-small-zh-v1.5\\onnx\\model.onnx",
+  "sizes_mb": {
+    "fp32": 90.46,
+    "int8_self": 22.81,
+    "fp16_self": 45.3
+  },
+  "int8_build_seconds": 1.8,
+  "compression_int8": 3.97,
+  "cosine_int8_vs_fp32": [
+    0.955887,
+    0.958712
+  ],
+  "fp16_build_seconds": 0.9,
+  "compression_fp16": 2.0,
+  "cosine_fp16_vs_fp32_error": "[ONNXRuntimeError] : 1 : FAIL : Load model from D:\\oceanbase\\powercontext-oceanbase\\stepfun\\knowledge-base\\public\\models\\bge-small-zh-v1.5\\onnx\\model_fp16_self.onnx failed:Type Error: Type (tensor(float16)) of output arg (/Cast_output_0) of node (/Cast) does not match expected type (tensor(float))."
+}
