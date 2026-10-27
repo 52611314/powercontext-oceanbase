@@ -40,7 +40,7 @@
 
 - 每次验收脚本的输出（`OK`）与 `docs/evidence/*.json`
 - `data/logs/retrieval.jsonl` 中的逐次检索记录
-- Git 提交历史（提交后补充 commit hash）
+- Git 提交：`aa78ece0`（移除旧脚手架）、`17ddfb60`（CiteSeek 实现与站点），已推送 `origin/2026-competition-ecosystem`
 - 建议截图清单：
   1. 需求拆解与方案讨论（Qoder 对话，待补）
   2. P0 探针 EXPLAIN 输出（`docs/evidence/search-evidence.json` 可复现）
