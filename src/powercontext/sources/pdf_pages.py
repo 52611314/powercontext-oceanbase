@@ -36,19 +36,65 @@ PDF_PAGE_SOURCE_VERSION = "1"
 
 _IDENTITY_PREFIX = "pdf:"
 _MAX_KEYWORD_TERMS = 12
-_MAX_TERM_QUERIES = 4
+_MAX_TERM_QUERIES = 10
 _RRF_K = 60
 _MIN_SCORED_HITS = 24
 
 _TERM_EXPANSIONS: dict[str, tuple[str, ...]] = {
-    "geographies": ("geography", "geographic", "geographical"),
+    "geographies": ("geography", "geographic", "geographical", "countries", "markets", "regions"),
     "geography": ("geographic", "geographical"),
+    "operates": ("operate", "operating", "operations"),
     "legal": ("litigation", "proceedings"),
     "battles": ("litigation", "proceedings", "claims"),
     "capex": ("capital", "expenditures"),
     "d": ("depreciation",),
     "a": ("amortization",),
 }
+
+_FOCUS_TERMS = frozenset({
+    "amortization",
+    "battles",
+    "capex",
+    "cash",
+    "costs",
+    "countries",
+    "depreciation",
+    "ebitda",
+    "flow",
+    "flows",
+    "geographies",
+    "income",
+    "legal",
+    "litigation",
+    "margin",
+    "markets",
+    "operating",
+    "operates",
+    "proceedings",
+    "regions",
+    "restructuring",
+    "revenue",
+    "sales",
+    "statement",
+    "statements",
+})
+
+_MAX_PAIR_QUERIES = 4
+_PAIR_PRIORITY_HITS = 6
+_PAIR_TEMPLATES: tuple[tuple[str, str], ...] = (
+    ("operating", "income"),
+    ("income", "statement"),
+    ("depreciation", "amortization"),
+    ("cash", "flow"),
+    ("operating", "cash"),
+    ("capital", "expenditures"),
+    ("operating", "countries"),
+    ("countries", "markets"),
+    ("operating", "markets"),
+    ("restructuring", "costs"),
+    ("legal", "proceedings"),
+    ("litigation", "proceedings"),
+)
 
 
 class PDFDocumentInput(BaseModel):
@@ -192,39 +238,49 @@ async def search_pdf_pages(
     request_limit = max(limit * 2, 40)
     scored_hits = max(limit, _MIN_SCORED_HITS)
     scores: dict[tuple[str, int], float] = {}
+    best_ranks: dict[tuple[str, int], int] = {}
     citations_by_page: dict[tuple[str, int], Any] = {}
     order: dict[tuple[str, int], int] = {}
-    seen_entries: set[tuple[str, str]] = set()
+    priority: list[tuple[str, int]] = []
+    pair_queries = set(_pair_queries(_available_terms(question)))
     for query in _search_queries(question):
         page = await memory.search(SearchMemoryRequest(query=query, mode="fts", limit=request_limit))
-        await _score_page_hits(
+        page_keys = await _score_page_hits(
             memory,
             page.hits[:scored_hits],
             scores,
+            best_ranks,
             citations_by_page,
             order,
-            seen_entries,
         )
-    ranked = sorted(scores, key=lambda page_key: (-scores[page_key], order[page_key]))
-    return tuple(citations_by_page[page_key] for page_key in ranked[:limit])
+        if query in pair_queries:
+            priority.extend(page_keys[:_PAIR_PRIORITY_HITS])
+    ranked = sorted(scores, key=lambda page_key: (best_ranks[page_key], -scores[page_key], order[page_key]))
+    selected: list[tuple[str, int]] = []
+    selected_keys: set[tuple[str, int]] = set()
+    for page_key in (*priority, *ranked):
+        if len(selected) >= limit:
+            break
+        if page_key in selected_keys:
+            continue
+        selected.append(page_key)
+        selected_keys.add(page_key)
+    return tuple(citations_by_page[page_key] for page_key in selected)
 
 
 async def _score_page_hits(
     memory: Any,
     hits: Any,
     scores: dict[tuple[str, int], float],
+    best_ranks: dict[tuple[str, int], int],
     citations_by_page: dict[tuple[str, int], Any],
     order: dict[tuple[str, int], int],
-    seen_entries: set[tuple[str, str]],
-) -> None:
+) -> list[tuple[str, int]]:
     from powercontext.builtin.artifacts.memory.models import MemoryCitation
     from powercontext.builtin.runtime import GetMemoryEntryRequest
 
+    page_keys: list[tuple[str, int]] = []
     for rank, hit in enumerate(hits):
-        entry_key = (hit.entry_id, hit.entry_version_id)
-        if entry_key in seen_entries:
-            continue
-        seen_entries.add(entry_key)
         citation = MemoryCitation(
             memory_ref=hit.memory_ref,
             entry_id=hit.entry_id,
@@ -238,18 +294,54 @@ async def _score_page_hits(
         if page_key is None:
             continue
         scores[page_key] = scores.get(page_key, 0.0) + 1.0 / (_RRF_K + rank)
+        best_ranks[page_key] = min(best_ranks.get(page_key, rank), rank)
         citations_by_page.setdefault(page_key, citation)
         order.setdefault(page_key, len(order))
+        page_keys.append(page_key)
+    return page_keys
 
 
 def _search_queries(question: str) -> tuple[str, ...]:
-    terms = _distinct_terms(question)
+    terms = _available_terms(question)
     queries = [question.strip()]
     core_terms = tuple(term for term in terms if len(term) >= 2)[:_MAX_KEYWORD_TERMS]
     if core_terms:
         queries.append(" ".join(core_terms))
     queries.extend(_term_queries(terms))
+    queries.extend(_pair_queries(terms))
     return _dedupe_queries(queries)
+
+
+def _available_terms(question: str) -> tuple[str, ...]:
+    terms = list(_distinct_terms(question))
+    lowered = question.casefold()
+    for marker, additions in (
+        ("d&a", ("depreciation", "amortization")),
+        ("geograph", ("countries", "markets")),
+        ("legal", ("litigation", "proceedings")),
+        ("litigation", ("proceedings",)),
+    ):
+        if marker not in lowered:
+            continue
+        for term in additions:
+            if term not in terms:
+                terms.append(term)
+    for term in tuple(terms):
+        for expansion in _TERM_EXPANSIONS.get(term, ()):
+            if expansion not in terms:
+                terms.append(expansion)
+    return tuple(terms)
+
+
+def _pair_queries(terms: tuple[str, ...]) -> tuple[str, ...]:
+    available = set(terms)
+    queries: list[str] = []
+    for left, right in _PAIR_TEMPLATES:
+        if left in available and right in available:
+            queries.append(f"{left} {right}")
+        if len(queries) >= _MAX_PAIR_QUERIES:
+            break
+    return tuple(queries)
 
 
 def _distinct_terms(question: str) -> tuple[str, ...]:
@@ -265,8 +357,11 @@ def _distinct_terms(question: str) -> tuple[str, ...]:
 def _term_queries(terms: tuple[str, ...]) -> tuple[str, ...]:
     candidates: list[str] = []
     expanded_terms = tuple(term for term in terms if term in _TERM_EXPANSIONS)
-    other_terms = tuple(term for term in terms if term not in _TERM_EXPANSIONS and len(term) >= 5)
-    for term in (*expanded_terms, *other_terms):
+    focused_terms = tuple(term for term in terms if term in _FOCUS_TERMS and term not in _TERM_EXPANSIONS)
+    other_terms = tuple(
+        term for term in terms if term not in _TERM_EXPANSIONS and term not in _FOCUS_TERMS and len(term) >= 5
+    )
+    for term in (*expanded_terms, *focused_terms, *other_terms):
         variants = (*_TERM_EXPANSIONS.get(term, ()), *_stem_forms(term))
         if len(term) >= 2:
             candidates.append(term)
