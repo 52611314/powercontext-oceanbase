@@ -1,0 +1,425 @@
+app:
+  description: 一个会记住你恶作剧的 NPC 互动叙事应用
+  icon: 🏮
+  icon_background: '#FFEAD5'
+  mode: advanced-chat
+  name: 记仇小镇
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.26@bdf47cb41e9062bba00d26625d2a795c1874011d8ce64bff738c44b5a31787ea
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai_api_compatible:0.0.73@4cf123ffaa4556f079bed6c47f3a462cc825504b859b183239e74eb19136a4b5
+kind: app
+version: 0.3.1
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: 老陈正靠在柜台后面打盹。你走进杂货店，他眼皮都没抬：「买啥？不买别乱摸。」
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+    - 老板，这苹果甜不甜？
+    - 我帮你把货搬进来吧
+    - 上次那事……对不起
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: http-request
+      id: start-http_search
+      source: start
+      sourceHandle: source
+      target: http_search
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: http-request
+      id: http_search-http_relation
+      source: http_search
+      sourceHandle: source
+      target: http_relation
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: http-request
+      id: http_relation-http_profile
+      source: http_relation
+      sourceHandle: source
+      target: http_profile
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: llm
+      id: http_profile-llm
+      source: http_profile
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: llm-code
+      source: llm
+      sourceHandle: source
+      target: code
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: code-http_write
+      source: code
+      sourceHandle: source
+      target: http_write
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: answer
+      id: http_write-answer
+      source: http_write
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: 开始
+        type: start
+        variables: []
+      height: 54
+      id: start
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 在 seekdb 中按语义检索老陈对这位玩家的记忆
+        title: 检索记忆
+        type: http-request
+        method: post
+        url: http://town-backend:8000/memory/search
+        authorization:
+          type: no-auth
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data:
+          - key: ''
+            type: text
+            value: '{"player_id": "player-1", "npc_id": "laochen", "query": "{{#sys.query#}}", "top_k": 5}'
+        timeout:
+          connect: 10
+          read: 30
+          write: 10
+        retry_config:
+          retry_enabled: false
+          max_retries: 1
+          retry_interval: 1000
+      height: 90
+      id: http_search
+      position:
+        x: 384
+        y: 282
+      positionAbsolute:
+        x: 384
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 读取老陈对这位玩家的愤怒值、信任值
+        title: 读取关系
+        type: http-request
+        method: post
+        url: http://town-backend:8000/relation/get
+        authorization:
+          type: no-auth
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data:
+          - key: ''
+            type: text
+            value: '{"player_id": "player-1", "npc_id": "laochen"}'
+        timeout:
+          connect: 10
+          read: 30
+          write: 10
+        retry_config:
+          retry_enabled: false
+          max_retries: 1
+          retry_interval: 1000
+      height: 90
+      id: http_relation
+      position:
+        x: 688
+        y: 282
+      positionAbsolute:
+        x: 688
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 读取老陈的人设与口头禅
+        title: 读取人设
+        type: http-request
+        method: get
+        url: http://town-backend:8000/npc/profile
+        authorization:
+          type: no-auth
+        headers: 'Content-Type: application/json'
+        params: npc_id=laochen
+        body:
+          type: none
+          data: []
+        timeout:
+          connect: 10
+          read: 30
+          write: 10
+        retry_config:
+          retry_enabled: false
+          max_retries: 1
+          retry_interval: 1000
+      height: 90
+      id: http_profile
+      position:
+        x: 992
+        y: 282
+      positionAbsolute:
+        x: 992
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 老陈根据人设、记忆、关系生成回复与结构化记忆
+        memory:
+          query_prompt_template: '{{#sys.query#}}
+
+
+            {{#sys.files#}}'
+          window:
+            enabled: false
+            size: 10
+        model:
+          completion_params:
+            temperature: 0.8
+          mode: chat
+          name: deepseek-flash
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - role: system
+          text: '你是小镇杂货店老板「老陈」，五十来岁，抠门、嘴硬、记性极好，说话带点方言味，爱用反问句。
+
+
+            【你的人设】
+
+            {{#http_profile.body#}}
+
+
+            【你和眼前这位玩家的关系（JSON）】
+
+            {{#http_relation.body#}}
+
+
+            【你记得他做过的相关事情（JSON，summary 字段是摘要）】
+
+            {{#http_search.body#}}
+
+
+            【回复要求】
+
+            1. 用老陈的口吻说话，1~3 句，口语化。可以翻旧账、阴阳怪气，也可以嘴硬心软。
+
+            2. 如果记忆里有他干过的坏事，要主动提起，比如「上次偷我苹果那事，我可没忘」。
+
+            3. 只输出一个 JSON 对象，不要输出其他任何文字，格式如下：
+
+            {"reply": "你对玩家说的话", "event_type": "steal_apple|firecracker|rumor|help|apologize|gift|chat", "memory": "用第三人称描述玩家这次做了什么，不超过40字"}
+
+            4. event_type 按玩家这次的行为选择：偷东西=steal_apple，放鞭炮/恶作剧=firecracker，造谣=rumor，帮忙=help，道歉=apologize，送礼=gift，其他=chat。
+
+            5. memory 是写给未来检索的记忆，要具体，例如「偷了老陈一个红苹果」。'
+        - role: user
+          text: '{{#sys.query#}}'
+        selected: true
+        title: 老陈回应
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: llm
+      position:
+        x: 1296
+        y: 282
+      positionAbsolute:
+        x: 1296
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        code: "import json\nimport re\n\n\ndef main(llm_text: str) -> dict:\n    text = (llm_text or \"\").strip()\n    # 去掉 DeepSeek 等模型的推理块\n    text = re.sub(r\"<think[^>]*>.*?</think\\s*>\", \"\", text, flags=re.S).strip()\n    text = re.sub(r\"^<think[^>]*>.*$\", \"\", text, flags=re.S).strip()\n    if text.startswith(\"```\"):\n        text = text.strip(\"`\").strip()\n        if text.lower().startswith(\"json\"):\n            text = text[4:].strip()\n    reply = \"\"\n    event_type = \"chat\"\n    memory = \"\"\n    try:\n        data = json.loads(text)\n        reply = str(data.get(\"reply\") or \"\").strip()\n        event_type = str(data.get(\"event_type\") or \"chat\").strip()\n        memory = str(data.get(\"memory\") or \"\").strip()\n    except Exception:\n        reply = text\n    if not reply:\n        reply = \"……你刚才说啥？\"\n    if not memory:\n        memory = \"和玩家闲聊了几句\"\n    return {\"reply\": reply, \"event_type\": event_type, \"memory\": memory}\n"
+        code_language: python3
+        desc: 从模型输出中解析回复、事件类型与记忆描述
+        outputs:
+          reply:
+            children: null
+            type: string
+          event_type:
+            children: null
+            type: string
+          memory:
+            children: null
+            type: string
+        selected: false
+        title: 解析回复
+        type: code
+        variables:
+        - value_selector:
+          - llm
+          - text
+          value_type: string
+          variable: llm_text
+      height: 54
+      id: code
+      position:
+        x: 1600
+        y: 282
+      positionAbsolute:
+        x: 1600
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 把本次事件写入 seekdb，并更新关系值
+        title: 写入记忆
+        type: http-request
+        method: post
+        url: http://town-backend:8000/memory/write
+        authorization:
+          type: no-auth
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data:
+          - key: ''
+            type: text
+            value: '{"player_id": "player-1", "npc_id": "laochen", "event_type": "{{#code.event_type#}}", "content": "{{#code.memory#}}"}'
+        timeout:
+          connect: 10
+          read: 30
+          write: 10
+        retry_config:
+          retry_enabled: false
+          max_retries: 1
+          retry_interval: 1000
+      height: 90
+      id: http_write
+      position:
+        x: 1904
+        y: 282
+      positionAbsolute:
+        x: 1904
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        answer: '{{#code.reply#}}'
+        desc: ''
+        selected: true
+        title: 回答
+        type: answer
+        variables: []
+      height: 105
+      id: answer
+      position:
+        x: 2208
+        y: 282
+      positionAbsolute:
+        x: 2208
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.55

@@ -1,0 +1,55 @@
+# 记仇小镇本地覆盖配置
+#
+# 在官方 docker-compose.yaml 之外增加：
+# - town-backend：本地 embedding + seekdb 记忆检索服务
+#
+# 使用方式：
+#   docker compose -f docker-compose.yaml -f docker-compose.override.yaml up -d
+# 或直接 docker compose up -d（Compose 会自动加载本文件）。
+
+services:
+  # 统一公共 DNS：宿主机校园网 DNS 无法解析部分模型 API 域名
+  api:
+    dns: &public_dns
+      - 223.5.5.5
+      - 114.114.114.114
+  worker:
+    dns: *public_dns
+  worker_beat:
+    dns: *public_dns
+  plugin_daemon:
+    dns: *public_dns
+  sandbox:
+    dns: *public_dns
+
+  town-backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: town-backend:latest
+    container_name: town-backend
+    restart: always
+    environment:
+      SEEKDB_HOST: seekdb
+      SEEKDB_PORT: "2881"
+      SEEKDB_USER: root
+      SEEKDB_PASSWORD: ${OCEANBASE_VECTOR_PASSWORD:-difyai123456}
+      SEEKDB_DATABASE: town
+      MODEL_PATH: /models/bge-small-zh-v1.5
+    volumes:
+      - ../data/models:/models:ro
+    networks:
+      - default
+    dns: *public_dns
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
