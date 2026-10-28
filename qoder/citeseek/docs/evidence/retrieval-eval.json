@@ -1,0 +1,479 @@
+{
+  "timestamp": "2026-10-28 00:32:40",
+  "base_url": "http://127.0.0.1:8080",
+  "query_count": 21,
+  "top_k": 10,
+  "modes": [
+    {
+      "mode": "hybrid",
+      "queries": 21,
+      "hit_at_10": 1.0,
+      "mrr_at_10": 0.819,
+      "section_recall_at_10": 0.9762,
+      "p50_latency_ms": 5.2,
+      "details": [
+        {
+          "query": "B+ 树为什么适合范围查询",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "哈希索引适合什么场景",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "联合索引的最左前缀原则",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "EXPLAIN 怎么看索引是否生效",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "KV cache 的显存怎么估算",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "FlashAttention 为什么能降低显存",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "KV cache 有哪些压缩策略",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "吞吐和延迟怎么权衡",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "长上下文推理的瓶颈在哪里",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "HNSW 的 ef 参数影响什么",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "BM25 是什么",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "RRF 融合公式里的 k 取多少",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "怎么评测检索效果 Recall@K",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "中文分词对全文检索有什么影响",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "向量索引和全文索引怎么配合使用",
+          "hit": true,
+          "first_rank": 5,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "为什么树形结构能把磁盘读取次数控制得很少",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "生成阶段为什么比一次性处理整段输入更慢",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎样在不保存完整注意力矩阵的情况下计算注意力",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎么把关键词匹配和语义召回的结果合并排序",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "专业术语搜不准该怎么处理",
+          "hit": true,
+          "first_rank": 6,
+          "section_recall": 0.5,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "对话变长以后缓存占用膨胀怎么办",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        }
+      ]
+    },
+    {
+      "mode": "fts",
+      "queries": 21,
+      "hit_at_10": 0.9524,
+      "mrr_at_10": 0.827,
+      "section_recall_at_10": 0.9524,
+      "p50_latency_ms": 4.5,
+      "details": [
+        {
+          "query": "B+ 树为什么适合范围查询",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "哈希索引适合什么场景",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "联合索引的最左前缀原则",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "EXPLAIN 怎么看索引是否生效",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "KV cache 的显存怎么估算",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "FlashAttention 为什么能降低显存",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "KV cache 有哪些压缩策略",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "吞吐和延迟怎么权衡",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "长上下文推理的瓶颈在哪里",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "HNSW 的 ef 参数影响什么",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "BM25 是什么",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "RRF 融合公式里的 k 取多少",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "怎么评测检索效果 Recall@K",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "中文分词对全文检索有什么影响",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "向量索引和全文索引怎么配合使用",
+          "hit": true,
+          "first_rank": 5,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "为什么树形结构能把磁盘读取次数控制得很少",
+          "hit": true,
+          "first_rank": 6,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "生成阶段为什么比一次性处理整段输入更慢",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎样在不保存完整注意力矩阵的情况下计算注意力",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎么把关键词匹配和语义召回的结果合并排序",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "专业术语搜不准该怎么处理",
+          "hit": false,
+          "first_rank": null,
+          "section_recall": 0.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "对话变长以后缓存占用膨胀怎么办",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        }
+      ]
+    },
+    {
+      "mode": "vector",
+      "queries": 21,
+      "hit_at_10": 1.0,
+      "mrr_at_10": 0.7159,
+      "section_recall_at_10": 1.0,
+      "p50_latency_ms": 4.5,
+      "details": [
+        {
+          "query": "B+ 树为什么适合范围查询",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "哈希索引适合什么场景",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "联合索引的最左前缀原则",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "EXPLAIN 怎么看索引是否生效",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "KV cache 的显存怎么估算",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "FlashAttention 为什么能降低显存",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "KV cache 有哪些压缩策略",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "吞吐和延迟怎么权衡",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "长上下文推理的瓶颈在哪里",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "HNSW 的 ef 参数影响什么",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "BM25 是什么",
+          "hit": true,
+          "first_rank": 5,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "RRF 融合公式里的 k 取多少",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "怎么评测检索效果 Recall@K",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "中文分词对全文检索有什么影响",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "向量索引和全文索引怎么配合使用",
+          "hit": true,
+          "first_rank": 6,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "为什么树形结构能把磁盘读取次数控制得很少",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "生成阶段为什么比一次性处理整段输入更慢",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎样在不保存完整注意力矩阵的情况下计算注意力",
+          "hit": true,
+          "first_rank": 1,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        },
+        {
+          "query": "怎么把关键词匹配和语义召回的结果合并排序",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "数据库索引与查询优化"
+        },
+        {
+          "query": "专业术语搜不准该怎么处理",
+          "hit": true,
+          "first_rank": 3,
+          "section_recall": 1.0,
+          "top1": "向量检索与混合检索实践"
+        },
+        {
+          "query": "对话变长以后缓存占用膨胀怎么办",
+          "hit": true,
+          "first_rank": 2,
+          "section_recall": 1.0,
+          "top1": "大模型推理优化讲义"
+        }
+      ]
+    }
+  ]
+}

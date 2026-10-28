@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CiteSeek — 文献与资料检索工作台</title>
+    <meta
+      name="description"
+      content="CiteSeek 是一个本地运行的文献与资料检索工作台：导入 PDF、Markdown 或 TXT，用 seekdb 的全文索引与向量索引混合召回，每条结果都能回到原文页码。"
+    />
+    <meta name="theme-color" content="#f7f4ed" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CiteSeek — 文献与资料检索工作台" />
+    <meta
+      property="og:description"
+      content="把散落的论文与笔记，变成能回到原文的答案。基于 seekdb 的中文全文索引与 HNSW 向量索引，一条 SQL 完成混合召回。"
+    />
+    <meta property="og:image" content="assets/og.png" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top" aria-label="CiteSeek 首页">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <rect width="32" height="32" rx="9" fill="#4f46e5" />
+              <path d="M10 9.5h8.5A2.5 2.5 0 0 1 21 12v12l-5.5-3-5.5 3V9.5Z" fill="#fff" />
+              <path d="M13 13h6M13 16.5h6" stroke="#4f46e5" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span>
+            <strong>CiteSeek</strong>
+            <small>文献与资料检索工作台</small>
+          </span>
+        </a>
+        <nav class="nav" aria-label="站点导航">
+          <a href="#problem">问题</a>
+          <a href="#features">功能</a>
+          <a href="#implementation">实现</a>
+          <a href="#evaluation">评测</a>
+          <a href="#start">运行</a>
+        </nav>
+        <a class="header-link" href="https://github.com/52611314/powercontext-oceanbase/tree/2026-competition-ecosystem/qoder/citeseek" target="_blank" rel="noreferrer">
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Qoder × OceanBase 比赛项目</p>
+          <h1>把散落的论文与笔记，<br /><em>变成能回到原文的答案。</em></h1>
+          <p class="lede">
+            CiteSeek 是一个本地运行的文献与资料检索工作台。导入 PDF、Markdown 或 TXT 后，
+            seekdb 的全文索引与向量索引同时召回，再用 RRF 融合排序——每条结果都能定位到页码和原文那一句。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#interface">看看真实界面</a>
+            <a class="button ghost" href="#start">本地运行</a>
+          </div>
+          <dl class="hero-stats">
+            <div>
+              <dt>100%</dt>
+              <dd>混合检索 Hit@10<br /><span>21 条固定查询</span></dd>
+            </div>
+            <div>
+              <dt>5.2 ms</dt>
+              <dd>检索 p50 延迟<br /><span>容器内热查询</span></dd>
+            </div>
+            <div>
+              <dt>1 条 SQL</dt>
+              <dd>两路召回<br /><span>全文 + 向量</span></dd>
+            </div>
+          </dl>
+        </div>
+        <figure class="hero-visual">
+          <div class="browser">
+            <div class="browser-bar">
+              <span></span><span></span><span></span>
+              <p>citeseek / 混合检索</p>
+            </div>
+            <img
+              src="assets/search.webp"
+              width="2160"
+              height="1350"
+              alt="CiteSeek 混合检索界面：B+ 树查询的结果卡片、命中高亮、全文与向量两路排名和 RRF 分数。"
+            />
+          </div>
+          <figcaption>真实运行截图：术语查询同时命中 B+ 树与范围查询段落，两路排名与融合分数都可见。</figcaption>
+        </figure>
+      </section>
+
+      <section class="band" id="problem">
+        <div class="section-head">
+          <p class="section-kicker">问题</p>
+          <h2>资料越攒越多，找回那一句却越来越难</h2>
+          <p class="section-intro">
+            论文 PDF、课程笔记、实验记录分散在下载目录和笔记软件里。只靠关键词会漏掉换一种说法的表述，只靠通用问答又拿不出可核对的出处。
+          </p>
+        </div>
+        <div class="problem-grid">
+          <article>
+            <span class="index">01</span>
+            <h3>术语与语义各管一半</h3>
+            <p>「B+ 树」「KV cache」需要精确匹配；「为什么树形结构能把磁盘读取次数控制得很少」则需要语义理解。单一检索方式总有一边失效。</p>
+          </article>
+          <article>
+            <span class="index">02</span>
+            <h3>出处经不起追问</h3>
+            <p>只给出答案没有页码，等于让人回去重新翻 PDF。研究资料的价值，在于每句话都能落回具体文献与章节。</p>
+          </article>
+          <article>
+            <span class="index">03</span>
+            <h3>检索过程是黑盒</h3>
+            <p>不知道用了哪个索引、两路候选如何合并、筛选是否真的下推。出现问题只能凭感觉调参，无法复现。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="section-head">
+          <p class="section-kicker">功能</p>
+          <h2>一个工作台，从导入到可追溯的答案</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="feature-top">
+              <span class="feature-icon" aria-hidden="true">▤</span>
+              <span class="feature-no">01</span>
+            </div>
+            <h3>文献库</h3>
+            <p>拖拽导入 PDF、Markdown、TXT，按 SHA-256 自动去重。索引进度、标签、阅读状态、重建与删除都在一张表里完成。</p>
+            <p class="feature-note">示例资料：3 篇 · 6 页 · 20 个文本块</p>
+          </article>
+          <article class="feature">
+            <div class="feature-top">
+              <span class="feature-icon" aria-hidden="true">⌕</span>
+              <span class="feature-no">02</span>
+            </div>
+            <h3>混合检索</h3>
+            <p>混合、全文、向量三种模式随查随换。文档与标签筛选同时下推到两路，命中词逐处高亮，还能看到每路排名与 RRF 分数。</p>
+            <p class="feature-note">B+ 树查询：全文 #1 · 向量 #1 · 10 条结果</p>
+          </article>
+          <article class="feature">
+            <div class="feature-top">
+              <span class="feature-icon" aria-hidden="true">❝</span>
+              <span class="feature-no">03</span>
+            </div>
+            <h3>带引用问答</h3>
+            <p>用抽取式方法组织答案，不调用大模型。每条结论直接来自检索到的原文句子，标注文献、页码与页内字符区间。</p>
+            <p class="feature-note">点击引用即可跳回那一页并高亮</p>
+          </article>
+          <article class="feature">
+            <div class="feature-top">
+              <span class="feature-icon" aria-hidden="true">◎</span>
+              <span class="feature-no">04</span>
+            </div>
+            <h3>可核对证据</h3>
+            <p>每次检索留存 SQL、参数、EXPLAIN、双通道候选与耗时。界面里的证据抽屉和 <code>data/logs/retrieval.jsonl</code> 都能复核。</p>
+            <p class="feature-note">EXPLAIN 同时出现全文与向量索引扫描</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band" id="interface">
+        <div class="section-head">
+          <p class="section-kicker">界面</p>
+          <h2>不是效果图，是运行中的界面</h2>
+          <p class="section-intro">
+            以下画面来自 <code>docker compose</code> 启动后的实际环境，示例资料为自撰笔记生成的 PDF。
+          </p>
+        </div>
+        <div class="gallery">
+          <div class="gallery-tabs" role="tablist" aria-label="界面截图">
+            <button role="tab" id="tab-library" aria-controls="shot-panel" aria-selected="false" data-shot="library">文献库</button>
+            <button role="tab" id="tab-search" aria-controls="shot-panel" aria-selected="true" data-shot="search">混合检索</button>
+            <button role="tab" id="tab-evidence" aria-controls="shot-panel" aria-selected="false" data-shot="evidence">seekdb 证据</button>
+            <button role="tab" id="tab-reader" aria-controls="shot-panel" aria-selected="false" data-shot="reader">原文定位</button>
+            <button role="tab" id="tab-ask" aria-controls="shot-panel" aria-selected="false" data-shot="ask">带引用问答</button>
+          </div>
+          <figure class="shot-frame" id="shot-panel" role="tabpanel" aria-labelledby="tab-search">
+            <div class="browser">
+              <div class="browser-bar">
+                <span></span><span></span><span></span>
+                <p id="shot-url">citeseek / 混合检索</p>
+              </div>
+              <img id="shot-image" src="assets/search.webp" width="2160" height="1350" alt="" />
+            </div>
+            <figcaption>
+              <span id="shot-caption"></span>
+              <a id="shot-open" href="assets/search.webp" target="_blank" rel="noreferrer">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="implementation">
+        <div class="section-head">
+          <p class="section-kicker">实现</p>
+          <h2>seekdb 不只是向量库</h2>
+          <p class="section-intro">
+            CiteSeek 只用一个 seekdb 实例，就把全文索引、向量索引和业务表放在同一个库里。混合检索不是应用层拼两次查询，而是一条 SQL 同时召回。
+          </p>
+        </div>
+        <div class="impl-grid">
+          <div class="impl-copy">
+            <ul class="checked">
+              <li>
+                <strong>双索引同表</strong>
+                <span><code>FULLTEXT INDEX ... WITH PARSER ik</code> 负责中文术语，<code>VECTOR INDEX ... HNSW</code> 负责语义相似。</span>
+              </li>
+              <li>
+                <strong>一条 SQL 两路召回</strong>
+                <span>两个 CTE 分别取 Top-N，<code>UNION ALL</code> 后在应用层做 RRF 融合（k=60），不依赖额外检索引擎。</span>
+              </li>
+              <li>
+                <strong>过滤条件同时下推</strong>
+                <span>文档与标签条件进入两个分支，避免先取全量候选再在应用层丢弃。</span>
+              </li>
+              <li>
+                <strong>全过程可核对</strong>
+                <span><code>EXPLAIN</code> 显示 <code>TEXT RETRIEVAL SCAN</code> 与 <code>VECTOR INDEX SCAN</code>；每次检索的 SQL 和参数都会保存。</span>
+              </li>
+            </ul>
+          </div>
+          <div class="impl-code">
+            <div class="code-card">
+              <div class="code-head"><span>混合检索 SQL（节选）</span><span class="tag">hybrid</span></div>
+              <pre><code><span class="kw">WITH</span> fts <span class="kw">AS</span> (
+  <span class="kw">SELECT</span> c.id, <span class="fn">MATCH</span>(c.text) <span class="kw">AGAINST</span>(%s) <span class="kw">AS</span> score
+  <span class="kw">FROM</span> chunks c
+  <span class="kw">WHERE</span> <span class="fn">MATCH</span>(c.text) <span class="kw">AGAINST</span>(%s)
+  <span class="kw">ORDER BY</span> score <span class="kw">DESC LIMIT</span> %s
+), vec <span class="kw">AS</span> (
+  <span class="kw">SELECT</span> c.id, <span class="fn">COSINE_DISTANCE</span>(c.embedding, %s) <span class="kw">AS</span> dist
+  <span class="kw">FROM</span> chunks c
+  <span class="kw">ORDER BY</span> dist <span class="kw">APPROXIMATE LIMIT</span> %s
+)
+<span class="kw">SELECT</span> <span class="str">'fts'</span>, id, score, <span class="kw">NULL</span> <span class="kw">FROM</span> fts
+<span class="kw">UNION ALL</span>
+<span class="kw">SELECT</span> <span class="str">'vector'</span>, id, <span class="kw">NULL</span>, dist <span class="kw">FROM</span> vec;</code></pre>
+            </div>
+            <div class="explain-card">
+              <div class="code-head"><span>EXPLAIN · 实际执行计划</span><span class="tag green">2 / 2 索引</span></div>
+              <pre><code>| 2 | TEXT RETRIEVAL SCAN   | c(ft_text)  |
+| 4 | VECTOR INDEX SCAN     | c(vidx_emb) |
+| 5 | UNION ALL             |             |
+| 6 | TEMP TABLE ACCESS     | fts         |
+| 7 | TEMP TABLE ACCESS     | vec         |</code></pre>
+            </div>
+          </div>
+        </div>
+        <div class="stack-strip">
+          <span>seekdb 1.4.0</span>
+          <span>HNSW / VSAG</span>
+          <span>IK 中文分词</span>
+          <span>FastAPI · Python 3.12</span>
+          <span>React 18 · Ant Design 5</span>
+          <span>bge-small-zh-v1.5 · int8 ONNX</span>
+        </div>
+      </section>
+
+      <section class="band" id="evaluation">
+        <div class="section-head">
+          <p class="section-kicker">评测</p>
+          <h2>同一索引上，三种模式的正面对比</h2>
+          <p class="section-intro">
+            固定 21 条中文查询，Top-10。相关判定为「命中正确文献且章节匹配」，MRR@10 取第一条相关结果的倒数排名。评测在容器内对示例资料执行。
+          </p>
+        </div>
+        <div class="eval-wrap">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th scope="col">模式</th>
+                <th scope="col">Hit@10</th>
+                <th scope="col">MRR@10</th>
+                <th scope="col">章节召回@10</th>
+                <th scope="col">p50 延迟</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="best">
+                <th scope="row">hybrid</th>
+                <td><span class="bar" style="--v: 100"></span>100.00%</td>
+                <td><span class="bar" style="--v: 82"></span>0.8190</td>
+                <td><span class="bar" style="--v: 97.6"></span>97.62%</td>
+                <td>5.2 ms</td>
+              </tr>
+              <tr>
+                <th scope="row">fts</th>
+                <td><span class="bar" style="--v: 95.2"></span>95.24%</td>
+                <td><span class="bar" style="--v: 82.7"></span>0.8270</td>
+                <td><span class="bar" style="--v: 95.2"></span>95.24%</td>
+                <td>4.5 ms</td>
+              </tr>
+              <tr>
+                <th scope="row">vector</th>
+                <td><span class="bar" style="--v: 100"></span>100.00%</td>
+                <td><span class="bar" style="--v: 71.6"></span>0.7159</td>
+                <td><span class="bar" style="--v: 100"></span>100.00%</td>
+                <td>4.5 ms</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="eval-notes">
+            <p><strong>怎么读：</strong>全文检索在术语原样出现时很强，但换一种说法会漏；向量检索 Hit@10 高，首次命中排名却更低。混合检索把两路候选融合后，首次命中排名明显好于单走向量，同时保持全部命中。</p>
+            <p class="fineprint">语料仅 3 篇示例资料、20 个文本块，指标用于验证链路与回归，不代表大规模语料上的绝对水平。逐条结果与复现命令见 <a href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/检索评测.md" target="_blank" rel="noreferrer">检索评测</a>。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="start">
+        <div class="section-head">
+          <p class="section-kicker">运行</p>
+          <h2>三步跑起来</h2>
+          <p class="section-intro">
+            需要 Docker Desktop。seekdb 与应用都通过 compose 启动，数据保存在 <code>citeseek/data</code>，不依赖外部 API 或在线模型。
+          </p>
+        </div>
+        <div class="start-grid">
+          <ol class="steps">
+            <li>
+              <span class="step-no">1</span>
+              <div>
+                <h3>启动服务</h3>
+                <pre><code>cd qoder/citeseek/deploy
+docker compose up -d --build</code></pre>
+              </div>
+            </li>
+            <li>
+              <span class="step-no">2</span>
+              <div>
+                <h3>导入示例资料</h3>
+                <pre><code>cd ..
+pip install httpx
+python scripts/verify_library.py http://127.0.0.1:8080</code></pre>
+                <p class="step-note">示例 PDF 已随仓库提供；仅在需要从 Markdown 重新生成时才运行 <code>make_samples.py</code>（依赖 reportlab）。</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-no">3</span>
+              <div>
+                <h3>打开工作台</h3>
+                <p><a href="http://127.0.0.1:8080" target="_blank" rel="noreferrer">http://127.0.0.1:8080</a> · API 文档 <code>/docs</code> · 健康检查 <code>/api/ready</code></p>
+              </div>
+            </li>
+          </ol>
+          <aside class="start-aside">
+            <h3>你会得到</h3>
+            <ul>
+              <li>3 篇中文示例资料（2 页 / 篇）与完整索引</li>
+              <li>资料库、混合检索、带引用问答、原文定位</li>
+              <li>可导出的检索结果与回答 Markdown</li>
+              <li>每一条检索的 SQL、EXPLAIN 与耗时记录</li>
+            </ul>
+            <p class="fineprint">首次构建需要拉取 seekdb 镜像并安装 Python 依赖。端口 8080 与 2881 默认只绑定本机回环地址。</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="band" id="qoder">
+        <div class="section-head">
+          <p class="section-kicker">开发过程</p>
+          <h2>用 Qoder 分阶段推进</h2>
+          <p class="section-intro">
+            项目按「每个阶段可验收」的节奏推进：先跑通资料库，再验证混合检索，最后补前端、评测与站点。每阶段都留下可复现的验证脚本与结果。
+          </p>
+        </div>
+        <div class="timeline">
+          <article>
+            <span>P1</span>
+            <h3>资料库</h3>
+            <p>解析、切块、嵌入、索引与去重；先用脚本验证 3 篇 PDF 的 20 个文本块全部入库。</p>
+          </article>
+          <article>
+            <span>P2</span>
+            <h3>混合检索</h3>
+            <p>落地 seekdb 双索引与单 SQL 召回，核对 EXPLAIN、通道排名与 RRF 结果。</p>
+          </article>
+          <article>
+            <span>P3</span>
+            <h3>带引用问答</h3>
+            <p>抽取式回答、页码与字符区间引用、导出与历史记录。</p>
+          </article>
+          <article>
+            <span>P4</span>
+            <h3>前端</h3>
+            <p>资料库、检索、问答、文献详情四个页面；把证据与原文定位做成可交互的抽屉。</p>
+          </article>
+          <article>
+            <span>P5</span>
+            <h3>评测与站点</h3>
+            <p>固定查询集与指标脚本，真实界面截图，运行说明与验证样例，发布项目网站。</p>
+          </article>
+        </div>
+        <p class="timeline-link">
+          各阶段的任务拆解、Qoder 承担的工作与复盘见
+          <a href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/Qoder开发记录.md" target="_blank" rel="noreferrer">Qoder 开发记录</a>。
+        </p>
+      </section>
+
+      <section id="documents">
+        <div class="section-head">
+          <p class="section-kicker">材料</p>
+          <h2>代码、文档与验证入口</h2>
+        </div>
+        <div class="doc-grid">
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/tree/2026-competition-ecosystem/qoder/citeseek" target="_blank" rel="noreferrer">
+            <span class="doc-kind">源码</span>
+            <h3>qoder/citeseek</h3>
+            <p>后端、前端、部署与脚本；内置 int8 嵌入模型，构建产物已包含。</p>
+            <span class="doc-arrow">GitHub ↗</span>
+          </a>
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/运行说明.md" target="_blank" rel="noreferrer">
+            <span class="doc-kind">文档</span>
+            <h3>运行说明</h3>
+            <p>环境要求、一键启动、导入示例、验收脚本、环境变量与常见问题。</p>
+            <span class="doc-arrow">阅读 ↗</span>
+          </a>
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/验证样例.md" target="_blank" rel="noreferrer">
+            <span class="doc-kind">验证</span>
+            <h3>验证样例</h3>
+            <p>8 步验收流程与每步预期结果，覆盖上传、检索、问答、证据与导出。</p>
+            <span class="doc-arrow">阅读 ↗</span>
+          </a>
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/技术证据.md" target="_blank" rel="noreferrer">
+            <span class="doc-kind">证据</span>
+            <h3>技术证据</h3>
+            <p>建表语句、索引参数、真实 SQL、EXPLAIN 与接口核对记录。</p>
+            <span class="doc-arrow">阅读 ↗</span>
+          </a>
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/检索评测.md" target="_blank" rel="noreferrer">
+            <span class="doc-kind">评测</span>
+            <h3>检索评测</h3>
+            <p>21 条查询、指标定义、逐条命中结果与复现方式。</p>
+            <span class="doc-arrow">阅读 ↗</span>
+          </a>
+          <a class="doc-card" href="https://github.com/52611314/powercontext-oceanbase/blob/2026-competition-ecosystem/qoder/citeseek/docs/Qoder开发记录.md" target="_blank" rel="noreferrer">
+            <span class="doc-kind">过程</span>
+            <h3>Qoder 开发记录</h3>
+            <p>P1–P5 的任务、提示与验收；Qoder 在实现、验证和文档中的分工。</p>
+            <span class="doc-arrow">阅读 ↗</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div>
+          <strong>CiteSeek</strong>
+          <p>文献与资料检索工作台 · Qoder × OceanBase 比赛项目</p>
+        </div>
+        <div class="footer-meta">
+          <span>seekdb 1.4.0</span>
+          <span>bge-small-zh-v1.5</span>
+          <span>在 Qoder 中开发</span>
+        </div>
+      </div>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

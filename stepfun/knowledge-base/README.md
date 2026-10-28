@@ -83,9 +83,11 @@ npm start          # 单端口 8787，同时提供页面、API 与模型文件
 
 | 精度 | 文件 | 体积 | 压缩比 | 用途 |
 | --- | --- | --- | --- | --- |
-| FP32 | `public/models/bge-small-zh-v1.5/onnx/model.onnx` | 90.46 MB | 1.00x | 质量基线 |
-| FP16 | `.../model_fp16.onnx` | 45.30 MB | 2.00x | WebGPU 默认 |
-| INT8 | `.../model_quantized.onnx` | 22.81 MB | 3.97x | WASM 默认 |
+| FP32 | `public/models/bge-small-zh-v1.5/onnx/model.onnx` | 90.46 MB | 1.00x | 质量基线（需 `npm run download:model`） |
+| FP16 | `.../model_fp16.onnx` | 45.30 MB | 2.00x | WebGPU 默认（需 `npm run download:model`） |
+| INT8 | `.../model_quantized.onnx` | 22.81 MB | 3.97x | WASM 默认（仓库内置） |
+
+> 为控制仓库体积、避免平台 clone 超时，仓库只内置 INT8 模型（22.8MB）；FP32/FP16 通过 `npm run download:model` 获取（支持 `MODEL_SOCKS` 走本机代理）。只跑 WASM + INT8 路径时无需额外下载。
 
 - 来源：<https://huggingface.co/Xenova/bge-small-zh-v1.5>（Transformers.js 格式，源自 `BAAI/bge-small-zh-v1.5`），512 维；
 - FP16 使用官方转换版本；INT8 由本仓库 `scripts/quantize-model.py` 用 `onnxruntime.quantization.quantize_dynamic` 生成；

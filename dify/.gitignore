@@ -1,0 +1,22 @@
+# Local model files (large, download per README)
+data/models/
+
+# Dify runtime data
+docker/volumes/seekdb/
+docker/volumes/app/
+docker/volumes/plugin_daemon/
+docker/volumes/redis/
+docker/volumes/sandbox/dependencies/
+docker/volumes/certbot/
+docker/volumes/weaviate/
+docker/volumes/db/
+
+# Python cache
+backend/__pycache__/
+backend/.pytest_cache/
+*.pyc
+
+# Local overrides and secrets
+docker/.env
+.env.local
+.secrets/
