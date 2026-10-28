@@ -1,0 +1,45 @@
+{
+  "revision": 1,
+  "items": [
+    {
+      "id": "ORD-001",
+      "status": "active",
+      "text": "list_orders: customer=None returns all customers; an explicit customer filters by exact equality. Sort ascending by integer id. Return copies without mutating input.",
+      "sources": [
+        "sample/orders.py",
+        "sample/test_orders.py"
+      ],
+      "tags": [
+        "orders",
+        "customer",
+        "regression"
+      ]
+    },
+    {
+      "id": "ORD-002",
+      "status": "active",
+      "text": "Add optional status filter: None disables it; allowed values pending, paid, cancelled use exact equality and combine with customer using AND. Empty string and unknown status raise ValueError even for empty orders.",
+      "sources": [
+        "sample/orders.py",
+        "sample/test_orders.py"
+      ],
+      "tags": [
+        "orders",
+        "status",
+        "filter"
+      ]
+    },
+    {
+      "id": "ORD-OLD",
+      "status": "superseded",
+      "text": "Legacy proposal: unknown status returns an empty list. Superseded by ORD-002.",
+      "sources": [
+        "sample/orders.py"
+      ],
+      "tags": [
+        "orders",
+        "status"
+      ]
+    }
+  ]
+}

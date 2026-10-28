@@ -1,0 +1,14 @@
+{
+  "time_ns": 1793164291589758186,
+  "runnable": "passed",
+  "context": "passed",
+  "database": "passed",
+  "state_reuse": "passed",
+  "code_change": "passed",
+  "minimax": {
+    "status": "passed",
+    "model": "MiniMax-M3.1-Flash",
+    "response_id": "0730b1cedbc32fc9f4cbe9259ae2e0db"
+  },
+  "all_required_passed": true
+}

@@ -1,0 +1,21 @@
+{
+  "id": "0730b1cedbc32fc9f4cbe9259ae2e0db",
+  "model": "MiniMax-M3.1-Flash",
+  "usage": {
+    "total_tokens": 5500,
+    "total_characters": 0,
+    "prompt_tokens": 3279,
+    "completion_tokens": 2221,
+    "completion_tokens_details": {
+      "reasoning_tokens": 2087
+    },
+    "prompt_tokens_details": {
+      "cached_tokens": 195
+    }
+  },
+  "elapsed_seconds": 21.115,
+  "finish_reason": "stop",
+  "content": "\"\"\"Small order query service.\"\"\"\n\n\ndef list_orders(orders, customer=None, status=None):\n    \"\"\"Return copies of matching orders sorted by integer id.\"\"\"\n    allowed_statuses = (\"pending\", \"paid\", \"cancelled\")\n\n    if status is not None and status not in allowed_statuses:\n        raise ValueError(\"status must be pending, paid, or cancelled\")\n\n    return sorted(\n        [\n            dict(o)\n            for o in orders\n            if (customer is None or o[\"customer\"] == customer)\n            and (status is None or o[\"status\"] == status)\n        ],\n        key=lambda o: int(o[\"id\"]),\n    )",
+  "endpoint": "https://api.minimaxi.com/v1/text/chatcompletion_v2",
+  "context_fingerprint": "1f5f89a756fc79f40f007610a1de4b26e94edf4a70b1e56147a59a51ed80b7cb"
+}

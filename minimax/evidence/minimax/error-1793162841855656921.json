@@ -1,0 +1,8 @@
+{
+  "endpoint": "https://api.minimaxi.com/v1/text/chatcompletion_v2",
+  "model": "MiniMax-M2.5",
+  "provider_error": {
+    "status_code": 2069,
+    "status_msg": "The model \"MiniMax-M2.5\" is no longer available."
+  }
+}

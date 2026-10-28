@@ -1,0 +1,2 @@
+powercontext[builtin]==1.4.1
+PyMySQL==1.2.0

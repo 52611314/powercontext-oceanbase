@@ -1,0 +1,72 @@
+{
+  "task_id": "orders-status",
+  "task": "orders list_orders status filter customer regression",
+  "fingerprint": "761d2faa0008bf1defec8810b822cc50019aec66d9b10892d6e89e4c0db1a77b",
+  "sources": [
+    {
+      "id": "ORD-001",
+      "kind": "spec",
+      "path": "sample/spec.json#ORD-001",
+      "content": "{\"revision\": 2, \"id\": \"ORD-001\", \"status\": \"active\", \"text\": \"list_orders: customer=None returns all customers; an explicit customer filters by exact equality. Sort ascending by integer id. Return copies without mutating input.\", \"sources\": [\"sample/orders.py\", \"sample/test_orders.py\"], \"tags\": [\"orders\", \"customer\", \"regression\"]}",
+      "sha256": "cc58ec31c174ba3ef872e13d37576458cb19bf4541084851527996b703641fb8",
+      "links": "[\"sample/orders.py\", \"sample/test_orders.py\"]",
+      "active": 1
+    },
+    {
+      "id": "ORD-002",
+      "kind": "spec",
+      "path": "sample/spec.json#ORD-002",
+      "content": "{\"revision\": 2, \"id\": \"ORD-002\", \"status\": \"active\", \"text\": \"Add optional status filter: None disables it; allowed values pending, paid, cancelled use exact equality and combine with customer using AND. Empty string and unknown status raise ValueError even for empty orders. Revision 2: also allow refunded as an exact status.\", \"sources\": [\"sample/orders.py\", \"sample/test_orders.py\"], \"tags\": [\"orders\", \"status\", \"filter\"]}",
+      "sha256": "1f528ee54e5b74af79209e93d3ec3a9a0ab0921b508aca58d3841fce7cd8a6e9",
+      "links": "[\"sample/orders.py\", \"sample/test_orders.py\"]",
+      "active": 1
+    },
+    {
+      "id": "sample/orders.py",
+      "kind": "code",
+      "path": "sample/orders.py",
+      "content": "\"\"\"Small order query service.\"\"\"\n\n\ndef list_orders(orders, customer=None, status=None):\n    \"\"\"Return copies of matching orders sorted by integer id.\"\"\"\n    allowed_statuses = (\"pending\", \"paid\", \"cancelled\")\n\n    if status is not None and status not in allowed_statuses:\n        raise ValueError(\"status must be pending, paid, or cancelled\")\n\n    return sorted(\n        [\n            dict(o)\n            for o in orders\n            if (customer is None or o[\"customer\"] == customer)\n            and (status is None or o[\"status\"] == status)\n        ],\n        key=lambda o: int(o[\"id\"]),\n    )\n",
+      "sha256": "cd4cfdfe9e195f8478751c883a6a2076509cd6db622b3ba232f050f7596d2059",
+      "links": "[]",
+      "active": 1
+    },
+    {
+      "id": "sample/test_orders.py",
+      "kind": "test",
+      "path": "sample/test_orders.py",
+      "content": "import copy\nimport unittest\nfrom orders import list_orders\n\nDATA = [\n    {\"id\": 3, \"customer\": \"alice\", \"status\": \"pending\"},\n    {\"id\": 1, \"customer\": \"alice\", \"status\": \"paid\"},\n    {\"id\": 2, \"customer\": \"bob\", \"status\": \"paid\"},\n    {\"id\": 4, \"customer\": \"bob\", \"status\": \"cancelled\"},\n]\n\nclass Regression(unittest.TestCase):\n    def test_default_sorted(self):\n        self.assertEqual([o[\"id\"] for o in list_orders(DATA)], [1, 2, 3, 4])\n    def test_customer(self):\n        self.assertEqual([o[\"id\"] for o in list_orders(DATA, customer=\"alice\")], [1, 3])\n        self.assertEqual(list_orders(DATA, customer=\"missing\"), [])\n    def test_no_mutation(self):\n        before = copy.deepcopy(DATA)\n        result = list_orders(DATA)\n        result[0][\"status\"] = \"changed\"\n        self.assertEqual(DATA, before)\n    def test_empty(self):\n        self.assertEqual(list_orders([]), [])\n\nclass Target(unittest.TestCase):\n    def test_status(self):\n        for status, ids in [(\"pending\", [3]), (\"paid\", [1, 2]), (\"cancelled\", [4])]:\n            with self.subTest(status=status):\n                self.assertEqual([o[\"id\"] for o in list_orders(DATA, status=status)], ids)\n    def test_combined(self):\n        self.assertEqual([o[\"id\"] for o in list_orders(DATA, customer=\"alice\", status=\"paid\")], [1])\n        self.assertEqual(list_orders(DATA, customer=\"alice\", status=\"cancelled\"), [])\n    def test_invalid(self):\n        for rows in [DATA, []]:\n            for status in [\"\", \"PAID\", \"unknown\"]:\n                with self.subTest(rows=bool(rows), status=status):\n                    with self.assertRaises(ValueError):\n                        list_orders(rows, status=status)\n\nif __name__ == \"__main__\":\n    unittest.main()",
+      "sha256": "b931ace0c7bdc070e3a336f3eeabdf29fc5c4e606e6136c5085266ec3df3d2d8",
+      "links": "[]",
+      "active": 1
+    }
+  ],
+  "previous_state": {
+    "done": [
+      "status filter implemented",
+      "7 tests passed"
+    ],
+    "todo": [
+      "review patch"
+    ],
+    "fingerprint": "f010c0e21408ccb693b25d875f5e7d559f53f12d44580624de6a4f93ee2d809c",
+    "validation": {
+      "command": [
+        "/home/ghy/powercontext-work/minimax/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_orders"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "test_customer (test_orders.Regression.test_customer) ... ok\ntest_default_sorted (test_orders.Regression.test_default_sorted) ... ok\ntest_empty (test_orders.Regression.test_empty) ... ok\ntest_no_mutation (test_orders.Regression.test_no_mutation) ... ok\ntest_combined (test_orders.Target.test_combined) ... ok\ntest_invalid (test_orders.Target.test_invalid) ... ok\ntest_status (test_orders.Target.test_status) ... ok\n\n----------------------------------------------------------------------\nRan 7 tests in 0.000s\n\nOK\n",
+      "source_sha256": "cd4cfdfe9e195f8478751c883a6a2076509cd6db622b3ba232f050f7596d2059",
+      "tests_sha256": "b931ace0c7bdc070e3a336f3eeabdf29fc5c4e606e6136c5085266ec3df3d2d8",
+      "git_base": "e550d01a9d5b070f8b38cd58ea493c95f1347bca"
+    },
+    "task_id": "orders-status",
+    "saved_ns": 1793164284747523952
+  },
+  "validation_current": false,
+  "next_action": "review current sources and rerun validation"
+}
